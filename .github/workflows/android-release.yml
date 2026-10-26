@@ -46,14 +46,24 @@ jobs:
             echo "No KEYSTORE_BASE64 secret: building UNSIGNED release APKs."
           fi
 
+      - name: Ensure wrapper is executable
+        run: chmod +x gradlew
+
       - name: Assemble TV release APK
         run: ./gradlew :app-tv:assembleRelease
 
-      - name: Rename APKs with version
+      - name: Collect APKs with version
         run: |
           TAG="${GITHUB_REF_NAME:-manual}"
           mkdir -p dist
-          cp app-tv/build/outputs/apk/release/app-tv-release.apk "dist/idlix-tv-${TAG}.apk" 2>/dev/null || true
+          # Signed builds emit app-tv-release.apk; unsigned builds app-tv-release-unsigned.apk.
+          apk=$(find app-tv/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "No release APK found in app-tv/build/outputs/apk/release"
+            find app-tv/build/outputs -name '*.apk' || true
+            exit 1
+          fi
+          cp "$apk" "dist/idlix-tv-${TAG}.apk"
           ls -la dist
 
       - name: Upload APK artifacts
@@ -61,6 +71,7 @@ jobs:
         with:
           name: release-apks
           path: dist/*.apk
+          if-no-files-found: error
 
   publish-release:
     name: Publish GitHub release
