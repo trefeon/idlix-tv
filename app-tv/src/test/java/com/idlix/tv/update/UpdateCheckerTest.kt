@@ -11,10 +11,9 @@ import org.junit.Test
  * UpdateInstaller.kt, UpdateCheckWorker.kt, UpdateSettingsRow.kt).
  *
  * Shape assertions run offline via reflection. The behavioural matrix
- * (newer/equal/malformed/offline JSON -> Available/UpToDate/Failed) needs
- * an injectable release-fetch seam in UpdateChecker.kt so tests never hit
- * https://api.github.com/repos/trefeon/idlix-tv/releases/latest; no live
- * fetch is performed here.
+ * (newer/equal/malformed/offline redirect -> Available/UpToDate/Failed) runs
+ * offline against UpdateChecker.kt's pure helpers; no live GitHub fetch is
+ * performed here.
  */
 class UpdateCheckerTest {
 
@@ -128,110 +127,130 @@ class UpdateCheckerTest {
         assertTrue(UpdateChecker.compareSemver(app, tag) >= 0)
     }
 
-    // Rate-limit quota saving: pure, network-free. No live GitHub fetch.
+    // No-API redirect flow: pure, network-free. No live GitHub fetch.
 
     @Test
-    fun parseRateLimitResetHandlesHeaders() {
-        assertEquals(1767225600L, UpdateChecker.parseRateLimitReset("1767225600"))
-        assertEquals(1767225600L, UpdateChecker.parseRateLimitReset("  1767225600  "))
-        assertEquals(0L, UpdateChecker.parseRateLimitReset(null))
-        assertEquals(0L, UpdateChecker.parseRateLimitReset(""))
-        assertEquals(0L, UpdateChecker.parseRateLimitReset("garbage"))
-        assertEquals(0L, UpdateChecker.parseRateLimitReset("-5"))
-        assertEquals(0L, UpdateChecker.parseRateLimitReset("0"))
+    fun isRedirectAcceptsRedirectFamily() {
+        assertTrue(UpdateChecker.isRedirect(301))
+        assertTrue(UpdateChecker.isRedirect(302))
+        assertTrue(UpdateChecker.isRedirect(303))
+        assertTrue(UpdateChecker.isRedirect(307))
+        assertTrue(UpdateChecker.isRedirect(308))
+        assertTrue(!UpdateChecker.isRedirect(200))
+        assertTrue(!UpdateChecker.isRedirect(404))
+        assertTrue(!UpdateChecker.isRedirect(500))
     }
 
     @Test
-    fun rateLimitWindowActiveOnlyWhenFuture() {
-        assertTrue(UpdateChecker.isRateLimitWindowActive(1000L, 2000L))
-        assertTrue(!UpdateChecker.isRateLimitWindowActive(2000L, 2000L))
-        assertTrue(!UpdateChecker.isRateLimitWindowActive(3000L, 2000L))
-        assertTrue(!UpdateChecker.isRateLimitWindowActive(1000L, 0L))
-    }
-
-    @Test
-    fun rateLimitedBodyMatchesGitHubWording() {
-        assertTrue(
-            UpdateChecker.isRateLimitedBody(
-                "{\"message\":\"API rate limit exceeded for 1.2.3.4.\"}"
-            )
+    fun parseTagFromLocationHandlesForms() {
+        assertEquals(
+            "v1.0.5",
+            UpdateChecker.parseTagFromLocation("/trefeon/idlix-tv/releases/tag/v1.0.5")
         )
-        assertTrue(
-            UpdateChecker.isRateLimitedBody(
-                "{\"message\":\"You have exceeded a secondary rate limit.\"}"
-            )
+        assertEquals(
+            "v1.0.5",
+            UpdateChecker.parseTagFromLocation("https://github.com/trefeon/idlix-tv/releases/tag/v1.0.5")
         )
-        assertTrue(!UpdateChecker.isRateLimitedBody("{\"message\":\"Not Found\"}"))
-        assertTrue(!UpdateChecker.isRateLimitedBody(""))
+        assertEquals(
+            "v1.0.5",
+            UpdateChecker.parseTagFromLocation("https://github.com/trefeon/idlix-tv/releases/tag/v1.0.5/")
+        )
+        assertEquals(
+            "v1.0.5",
+            UpdateChecker.parseTagFromLocation("/trefeon/idlix-tv/releases/tag/v1.0.5?foo=bar")
+        )
+        assertEquals(null, UpdateChecker.parseTagFromLocation(null))
+        assertEquals(null, UpdateChecker.parseTagFromLocation(""))
+        assertEquals(null, UpdateChecker.parseTagFromLocation("   "))
+        // Unexpected redirect targets (login wall, tag list) carry no tag.
+        assertEquals(null, UpdateChecker.parseTagFromLocation("https://github.com/login"))
+        assertEquals(null, UpdateChecker.parseTagFromLocation("/trefeon/idlix-tv/releases"))
+        assertEquals(null, UpdateChecker.parseTagFromLocation("/trefeon/idlix-tv/releases/tag/"))
     }
 
     @Test
-    fun retryTimeFormatsAsHourMinute() {
-        val formatted = UpdateChecker.formatRetryTime(1767225600L)
-        assertTrue("retry time must read HH:MM, got: $formatted", formatted.contains(":"))
+    fun assetUrlForTagIsDeterministic() {
+        assertEquals(
+            "https://github.com/trefeon/idlix-tv/releases/download/v1.0.5/idlix-tv-v1.0.5.apk",
+            UpdateChecker.assetUrlForTag("v1.0.5")
+        )
     }
 
     @Test
-    fun selectApkAssetPrefersApk() {
-        val checksum = UpdateChecker.ReleaseAsset("https://x/app.zip", 10L)
-        val apk = UpdateChecker.ReleaseAsset("https://x/app-release.apk", 20L)
-        assertEquals(apk, UpdateChecker.selectApkAsset(listOf(checksum, apk)))
-        assertEquals(checksum, UpdateChecker.selectApkAsset(listOf(checksum)))
-        assertEquals(null, UpdateChecker.selectApkAsset(emptyList()))
+    fun parseContentLengthHandlesHeaders() {
+        assertEquals(42L, UpdateChecker.parseContentLength("42"))
+        assertEquals(42L, UpdateChecker.parseContentLength("  42  "))
+        assertEquals(0L, UpdateChecker.parseContentLength(null))
+        assertEquals(0L, UpdateChecker.parseContentLength(""))
+        assertEquals(0L, UpdateChecker.parseContentLength("garbage"))
+        assertEquals(0L, UpdateChecker.parseContentLength("0"))
+        assertEquals(0L, UpdateChecker.parseContentLength("-5"))
+    }
+
+    @Test
+    fun resolveAssetSizeMatrix() {
+        // HEAD served: size from Content-Length, 0 when absent.
+        assertEquals(42L, UpdateChecker.resolveAssetSize(200, "42", null, null))
+        assertEquals(0L, UpdateChecker.resolveAssetSize(200, null, null, null))
+        assertEquals(0L, UpdateChecker.resolveAssetSize(200, "garbage", null, null))
+        // HEAD blocked (405/403) -> range GET decides.
+        assertEquals(99L, UpdateChecker.resolveAssetSize(405, null, 206, "99"))
+        assertEquals(7L, UpdateChecker.resolveAssetSize(403, null, 200, "7"))
+        assertEquals(0L, UpdateChecker.resolveAssetSize(405, null, 206, null))
+        // Both fail -> APK missing.
+        assertEquals(null, UpdateChecker.resolveAssetSize(404, null, 404, null))
+        assertEquals(null, UpdateChecker.resolveAssetSize(500, null, null, null))
     }
 
     @Test
     fun decideReleaseMatrix() {
-        val apk = UpdateChecker.ReleaseAsset("https://x/app-release.apk", 42L)
+        val url = UpdateChecker.assetUrlForTag("v1.0.4")
         // Newer tag -> Available with trimmed version.
-        val newer = UpdateChecker.decideRelease("v1.0.4", "notes", listOf(apk), "1.0.3", 3L)
+        val newer = UpdateChecker.decideRelease("v1.0.4", "1.0.3", 3L, url, 42L)
         assertTrue(newer is UpdateChecker.ReleaseDecision.Available)
-        assertEquals("1.0.4", (newer as UpdateChecker.ReleaseDecision.Available).version)
-        assertEquals("https://x/app-release.apk", newer.assetUrl)
+        newer as UpdateChecker.ReleaseDecision.Available
+        assertEquals("1.0.4", newer.version)
+        assertEquals(url, newer.assetUrl)
+        assertEquals(42L, newer.sizeBytes)
+        // Unknown size (0) is still offered.
+        val unknownSize = UpdateChecker.decideRelease("v1.0.4", "1.0.3", 3L, url, 0L)
+        assertTrue(unknownSize is UpdateChecker.ReleaseDecision.Available)
+        assertEquals(0L, (unknownSize as UpdateChecker.ReleaseDecision.Available).sizeBytes)
         // Equal tag -> UpToDate (the v1.0.2 loop regression).
         assertTrue(
-            UpdateChecker.decideRelease("v1.0.3", "", listOf(apk), "1.0.3", 3L)
-                is UpdateChecker.ReleaseDecision.UpToDate
+            UpdateChecker.decideRelease(
+                "v1.0.3", "1.0.3", 3L, UpdateChecker.assetUrlForTag("v1.0.3"), 1L
+            ) is UpdateChecker.ReleaseDecision.UpToDate
         )
-        // Newer tag but no asset -> NoAsset.
+        // Older tag -> UpToDate.
         assertTrue(
-            UpdateChecker.decideRelease("v1.0.4", "", emptyList(), "1.0.3", 3L)
+            UpdateChecker.decideRelease(
+                "v1.0.2", "1.0.3", 3L, UpdateChecker.assetUrlForTag("v1.0.2"), 1L
+            ) is UpdateChecker.ReleaseDecision.UpToDate
+        )
+        // Newer tag but blank asset URL -> NoAsset.
+        assertTrue(
+            UpdateChecker.decideRelease("v1.0.4", "1.0.3", 3L, "", 0L)
                 is UpdateChecker.ReleaseDecision.NoAsset
         )
         // Blank tag -> BadData.
         assertTrue(
-            UpdateChecker.decideRelease("v", "", listOf(apk), "1.0.3", 3L)
+            UpdateChecker.decideRelease("v", "1.0.3", 3L, url, 1L)
                 is UpdateChecker.ReleaseDecision.BadData
         )
         // Non-semver tag falls back to trailing int.
         assertTrue(
-            UpdateChecker.decideRelease("release-2", "", listOf(apk), "release-abc", 5L)
+            UpdateChecker.decideRelease("release-2", "release-abc", 5L, url, 1L)
                 is UpdateChecker.ReleaseDecision.UpToDate
         )
-    }
-
-    @Test
-    fun decideCachedReleaseMatrix() {
-        // Newer cached tag + asset -> Available (304 still offers download).
-        val hit = UpdateChecker.decideCachedRelease(
-            "v1.0.4", "notes", "https://x/app-release.apk", 42L, "1.0.3", 3L
-        )
-        assertTrue(hit is UpdateChecker.ReleaseDecision.Available)
-        // Equal cached tag -> UpToDate.
+        // Non-semver tag with no trailing int falls back to versionName equality.
         assertTrue(
-            UpdateChecker.decideCachedRelease(
-                "v1.0.3", "", "https://x/app-release.apk", 42L, "1.0.3", 3L
-            ) is UpdateChecker.ReleaseDecision.UpToDate
-        )
-        // Newer tag but lost asset URL -> UpToDate (nothing to download).
-        assertTrue(
-            UpdateChecker.decideCachedRelease("v1.0.4", "", "", 0L, "1.0.3", 3L)
+            UpdateChecker.decideRelease("release-abc", "release-abc", 0L, url, 1L)
                 is UpdateChecker.ReleaseDecision.UpToDate
         )
-        // Empty cache -> UpToDate.
         assertTrue(
-            UpdateChecker.decideCachedRelease("", "", "", 0L, "1.0.3", 3L)
-                is UpdateChecker.ReleaseDecision.UpToDate
+            UpdateChecker.decideRelease("release-xyz", "release-abc", 0L, url, 1L)
+                is UpdateChecker.ReleaseDecision.Available
         )
     }
 }

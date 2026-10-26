@@ -6,39 +6,30 @@ import com.idlix.tv.BuildConfig
 import com.idlix.tv.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import okhttp3.Request
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
  * Checks the latest stable GitHub release against [BuildConfig.VERSION_NAME]
  * (semver-first, trailing-int fallback).
  *
- * Fail-closed and offline-safe: airplane mode, DNS failure, timeouts, HTTP
- * errors and malformed payloads all surface as [UpdateState.Failed], never throw.
+ * No GitHub REST API: plain HTTPS against github.com release pages, so there
+ * is no token and no 60 req/hour REST quota to burn through on shared IPs.
+ * `.../releases/latest` is an unmetered server-side redirect to
+ * `.../releases/tag/<tag>`; the APK URL is deterministic from the tag and is
+ * HEAD-verified before being offered.
  *
- * Rate-limit aware: GitHub's unauthenticated REST quota (60 req/hour per IP)
- * 403s on shared/carrier IPs, so the checker (a) sends `If-None-Match` with
- * the cached ETag (a 304 costs no quota) and (b) backs off locally until
- * `X-RateLimit-Reset` instead of burning quota on retries.
+ * Fail-closed and offline-safe: airplane mode, DNS failure, timeouts, HTTP
+ * errors and malformed redirects all surface as [UpdateState.Failed], never throw.
  */
 object UpdateChecker {
 
-    const val LATEST_RELEASE_URL = "https://api.github.com/repos/trefeon/idlix-tv/releases/latest"
+    internal const val GITHUB_OWNER = "trefeon"
+    internal const val GITHUB_REPO = "idlix-tv"
+    internal const val ASSET_PREFIX = "idlix-tv-"
 
-    internal const val UPDATE_PREFS = "idlix_tv_updates"
-    internal const val KEY_ETAG = "update_last_etag"
-    internal const val KEY_TAG = "update_last_tag"
-    internal const val KEY_NOTES = "update_last_notes"
-    internal const val KEY_ASSET_URL = "update_last_asset_url"
-    internal const val KEY_ASSET_SIZE = "update_last_asset_size"
-    internal const val KEY_RATELIMIT_RESET = "update_ratelimit_reset"
+    const val LATEST_RELEASE_URL = "https://github.com/trefeon/idlix-tv/releases/latest"
 
     /** Outcome of a pure, network-free release decision. */
     internal sealed interface ReleaseDecision {
@@ -53,33 +44,16 @@ object UpdateChecker {
         data object NoAsset : ReleaseDecision
     }
 
-    @Serializable
-    internal data class ReleaseAsset(
-        @SerialName("browser_download_url") val browserDownloadUrl: String = "",
-        @SerialName("size") val size: Long = 0L
-    )
-
-    @Serializable
-    private data class ReleaseResponse(
-        @SerialName("tag_name") val tagName: String = "",
-        @SerialName("body") val body: String = "",
-        @SerialName("assets") val assets: List<ReleaseAsset> = emptyList()
-    )
-
-    // 10s budget per check; stacked after CoreHttp's interceptors so the
-    // GitHub media type wins over CoreHttp's default Accept header.
-    private val checkClient by lazy {
+    // No-redirect client, independent from the catalog resolver: redirects ARE
+    // the signal here (Location -> tag), so followRedirects must stay off.
+    private val noRedirectClient by lazy {
         CoreHttp.okHttpClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
             .callTimeout(10, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
-            .addInterceptor { chain ->
-                val withAccept = chain.request().newBuilder()
-                    .header("Accept", "application/vnd.github+json")
-                    .build()
-                chain.proceed(withAccept)
-            }
             .build()
     }
 
@@ -87,156 +61,49 @@ object UpdateChecker {
         context: Context,
         currentVersionCode: Long = BuildConfig.VERSION_CODE.toLong()
     ): UpdateState = withContext(Dispatchers.IO) {
-        val prefs = try {
-            context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-        } catch (_: Exception) {
-            null
-        }
-        val nowSec = System.currentTimeMillis() / 1000
-        val resetSec = try {
-            prefs?.getLong(KEY_RATELIMIT_RESET, 0L) ?: 0L
-        } catch (_: Exception) {
-            0L
-        }
-        // Local backoff first: no network while a known rate-limit window holds.
-        if (isRateLimitWindowActive(nowSec, resetSec)) {
-            return@withContext UpdateState.Failed(
-                context.getString(R.string.update_err_rate_limited, formatRetryTime(resetSec))
-            )
-        }
-        val etag = try {
-            prefs?.getString(KEY_ETAG, null)
-        } catch (_: Exception) {
-            null
-        }
         try {
-            val builder = Request.Builder()
-                .url(LATEST_RELEASE_URL)
-                .get()
-            if (!etag.isNullOrBlank()) {
-                builder.header("If-None-Match", etag)
-            }
-            checkClient.newCall(builder.build()).execute().use { response ->
-                val remaining = response.header("X-RateLimit-Remaining")?.trim()?.toIntOrNull()
-                val resetHeader = parseRateLimitReset(response.header("X-RateLimit-Reset"))
-
-                if (response.code == 304) {
-                    // ETag still fresh: no quota consumed. Serve from cache.
-                    val cachedTag = try {
-                        prefs?.getString(KEY_TAG, null).orEmpty()
-                    } catch (_: Exception) {
-                        ""
-                    }
-                    val cachedNotes = try {
-                        prefs?.getString(KEY_NOTES, null).orEmpty()
-                    } catch (_: Exception) {
-                        ""
-                    }
-                    val cachedAsset = try {
-                        prefs?.getString(KEY_ASSET_URL, null).orEmpty()
-                    } catch (_: Exception) {
-                        ""
-                    }
-                    val cachedSize = try {
-                        prefs?.getLong(KEY_ASSET_SIZE, 0L) ?: 0L
-                    } catch (_: Exception) {
-                        0L
-                    }
-                    return@withContext when (
-                        val decision = decideCachedRelease(
-                            cachedTag, cachedNotes, cachedAsset, cachedSize,
-                            BuildConfig.VERSION_NAME, currentVersionCode
-                        )
-                    ) {
-                        is ReleaseDecision.Available -> UpdateState.Available(
-                            version = decision.version,
-                            notes = decision.notes,
-                            assetUrl = decision.assetUrl,
-                            sizeBytes = decision.sizeBytes
-                        )
-                        else -> UpdateState.UpToDate(
-                            cachedTag.trimStart('v', 'V')
-                                .ifBlank { BuildConfig.VERSION_NAME }
-                        )
-                    }
-                }
-
-                if (response.code == 403 || response.code == 429) {
-                    val errBody = try {
-                        response.body?.string().orEmpty()
-                    } catch (_: Exception) {
-                        ""
-                    }
-                    val rateLimited = response.code == 429 ||
-                        (remaining != null && remaining <= 0) ||
-                        isRateLimitedBody(errBody) ||
-                        resetHeader > nowSec
-                    if (rateLimited) {
-                        try {
-                            prefs?.edit()?.putLong(KEY_RATELIMIT_RESET, resetHeader)?.apply()
-                        } catch (_: Exception) {
-                        }
-                        return@withContext UpdateState.Failed(
-                            if (resetHeader > 0) {
-                                context.getString(
-                                    R.string.update_err_rate_limited,
-                                    formatRetryTime(resetHeader)
-                                )
-                            } else {
-                                context.getString(R.string.update_err_rate_limited_soon)
-                            }
-                        )
-                    }
+            // 1. Unmetered redirect: .../releases/latest -> .../releases/tag/<tag>.
+            val tag: String = noRedirectClient.newCall(
+                Request.Builder().url(LATEST_RELEASE_URL).get().build()
+            ).execute().use { response ->
+                if (!isRedirect(response.code)) {
                     return@withContext UpdateState.Failed(
                         context.getString(R.string.update_err_http, response.code)
                     )
                 }
-
-                if (!response.isSuccessful) {
-                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_http, response.code))
-                }
-                val payload = response.body?.string().orEmpty()
-                if (payload.isBlank()) {
-                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_empty))
-                }
-                val release = try {
-                    CoreHttp.json.decodeFromString<ReleaseResponse>(payload)
-                } catch (e: Exception) {
-                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_bad_data))
-                }
-                // Persist the quota-saving cache on every 200 so a later 304
-                // can still offer the download without an asset URL in hand.
-                val asset = selectApkAsset(release.assets)
-                try {
-                    prefs?.edit()
-                        ?.putString(KEY_ETAG, response.header("ETag"))
-                        ?.putString(KEY_TAG, release.tagName)
-                        ?.putString(KEY_NOTES, release.body)
-                        ?.putString(KEY_ASSET_URL, asset?.browserDownloadUrl.orEmpty())
-                        ?.putLong(KEY_ASSET_SIZE, asset?.size ?: 0L)
-                        ?.putLong(KEY_RATELIMIT_RESET, 0L)
-                        ?.apply()
-                } catch (_: Exception) {
-                }
-                return@withContext when (
-                    val decision = decideRelease(
-                        release.tagName, release.body, release.assets,
-                        BuildConfig.VERSION_NAME, currentVersionCode
+                parseTagFromLocation(response.header("Location"))
+                    ?: return@withContext UpdateState.Failed(
+                        context.getString(R.string.update_err_bad_data)
                     )
-                ) {
-                    is ReleaseDecision.Available -> UpdateState.Available(
-                        version = decision.version,
-                        notes = decision.notes,
-                        assetUrl = decision.assetUrl,
-                        sizeBytes = decision.sizeBytes
-                    )
-                    is ReleaseDecision.UpToDate ->
-                        UpdateState.UpToDate(BuildConfig.VERSION_NAME)
-                    is ReleaseDecision.BadData ->
-                        UpdateState.Failed(context.getString(R.string.update_err_bad_data))
-                    is ReleaseDecision.NoAsset ->
-                        UpdateState.Failed(context.getString(R.string.update_err_no_asset))
-                }
+            }
+            // 2. Deterministic asset URL; 200 (or range-GET 200/206) = installable.
+            val assetUrl = assetUrlForTag(tag)
+            val sizeBytes = probeAssetSize(assetUrl)
+                ?: return@withContext UpdateState.Failed(
+                    context.getString(R.string.update_err_no_asset)
+                )
+            // 3. Semver-vs-versionName decides; trailing int is only a fallback.
+            return@withContext when (
+                val decision = decideRelease(
+                    tagName = tag,
+                    appVersionName = BuildConfig.VERSION_NAME,
+                    currentVersionCode = currentVersionCode,
+                    assetUrl = assetUrl,
+                    sizeBytes = sizeBytes
+                )
+            ) {
+                is ReleaseDecision.Available -> UpdateState.Available(
+                    version = decision.version,
+                    notes = decision.notes,
+                    assetUrl = decision.assetUrl,
+                    sizeBytes = decision.sizeBytes
+                )
+                is ReleaseDecision.UpToDate ->
+                    UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+                is ReleaseDecision.BadData ->
+                    UpdateState.Failed(context.getString(R.string.update_err_bad_data))
+                is ReleaseDecision.NoAsset ->
+                    UpdateState.Failed(context.getString(R.string.update_err_no_asset))
             }
         } catch (e: IOException) {
             UpdateState.Failed(context.getString(R.string.update_err_network, e.message?.take(120) ?: "—"))
@@ -245,67 +112,101 @@ object UpdateChecker {
         }
     }
 
+    /**
+     * HEAD-verifies the deterministic asset URL, with a single-byte range GET
+     * fallback for servers that block HEAD. Returns size bytes (0 = unknown
+     * length, still installable), or null when the APK is missing. Network
+     * failures throw and surface as network errors, not "no asset".
+     */
+    private fun probeAssetSize(assetUrl: String): Long? {
+        var headCode = 0
+        var headLength: String? = null
+        noRedirectClient.newCall(
+            Request.Builder().url(assetUrl).head().build()
+        ).execute().use { head ->
+            headCode = head.code
+            headLength = head.header("Content-Length")
+        }
+        if (headCode == 200) return parseContentLength(headLength)
+        var rangeCode: Int? = null
+        var rangeLength: String? = null
+        noRedirectClient.newCall(
+            Request.Builder().url(assetUrl)
+                .header("Range", "bytes=0-0")
+                .get().build()
+        ).execute().use { range ->
+            rangeCode = range.code
+            rangeLength = range.header("Content-Length")
+        }
+        return resolveAssetSize(headCode, headLength, rangeCode, rangeLength)
+    }
+
     // ------------------------------------------------------------------ pure
 
+    /** True for the redirect codes .../releases/latest may answer with. */
+    internal fun isRedirect(code: Int): Boolean {
+        return code == 301 || code == 302 || code == 303 || code == 307 || code == 308
+    }
+
     /**
-     * Parses an `X-RateLimit-Reset` epoch-seconds value. Returns 0 when the
-     * header is absent or malformed (0 = no known window).
+     * Extracts the tag from a .../releases/latest redirect Location, absolute
+     * or relative, with optional trailing slash or query. Returns null when
+     * the Location is absent or does not point at a release tag.
      */
-    internal fun parseRateLimitReset(headerValue: String?): Long {
-        val trimmed = headerValue?.trim().orEmpty()
-        if (trimmed.isEmpty()) return 0L
-        return trimmed.toLongOrNull()?.takeIf { it > 0 } ?: 0L
+    internal fun parseTagFromLocation(location: String?): String? {
+        if (location.isNullOrBlank()) return null
+        val path = location.substringBefore('?').substringBefore('#')
+        val marker = "/releases/tag/"
+        val idx = path.indexOf(marker, ignoreCase = true)
+        if (idx < 0) return null
+        val after = path.substring(idx + marker.length)
+        if (after.isBlank()) return null
+        val tag = after.split('/').firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        return tag.takeIf { it.isNotEmpty() }
     }
 
     /**
-     * True when [nowSec] falls inside a known rate-limit window:
-     * [resetSec] is a future epoch (0 = none).
+     * Deterministic APK URL for a tag, mirroring android-release.yml naming
+     * (dist/idlix-tv-<tag>.apk, tag keeps its leading 'v').
      */
-    internal fun isRateLimitWindowActive(nowSec: Long, resetSec: Long): Boolean {
-        return resetSec > 0 && nowSec < resetSec
+    internal fun assetUrlForTag(tag: String): String {
+        return "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/download/$tag/$ASSET_PREFIX$tag.apk"
     }
 
-    /** True when a 403 body carries GitHub's rate-limit wording. */
-    internal fun isRateLimitedBody(body: String): Boolean {
-        if (body.isBlank()) return false
-        return body.contains("API rate limit exceeded", ignoreCase = true) ||
-            body.contains("secondary rate limit", ignoreCase = true)
-    }
-
-    /** Formats an epoch-seconds reset as HH:MM in device locale/timezone. */
-    internal fun formatRetryTime(resetEpochSec: Long): String {
-        return try {
-            SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
-                timeZone = TimeZone.getDefault()
-            }.format(Date(resetEpochSec * 1000))
-        } catch (_: Exception) {
-            SimpleDateFormat("HH:mm", Locale.US).format(Date(resetEpochSec * 1000))
-        }
+    /** Positive Content-Length, else 0 (unknown, still installable). */
+    internal fun parseContentLength(headerValue: String?): Long {
+        return headerValue?.trim()?.toLongOrNull()?.takeIf { it > 0 } ?: 0L
     }
 
     /**
-     * Prefers the APK asset: releases may also attach checksums or bundles,
-     * and blindly taking the first asset can hand the downloader a
-     * non-installable file.
+     * Offline probe decision: HEAD 200 wins on its own length; otherwise a
+     * range-GET 200/206 wins on its length; anything else means the APK is
+     * missing (null).
      */
-    internal fun selectApkAsset(assets: List<ReleaseAsset>): ReleaseAsset? {
-        return assets.firstOrNull {
-            it.browserDownloadUrl.substringBefore('?')
-                .endsWith(".apk", ignoreCase = true)
-        } ?: assets.firstOrNull()
+    internal fun resolveAssetSize(
+        headCode: Int,
+        headLength: String?,
+        rangeCode: Int?,
+        rangeLength: String?
+    ): Long? {
+        if (headCode == 200) return parseContentLength(headLength)
+        if (rangeCode == 200 || rangeCode == 206) return parseContentLength(rangeLength)
+        return null
     }
 
     /**
-     * Network-free release decision for a 200 payload. Semver-vs-versionName
-     * decides; the trailing-int-vs-versionCode scheme is only a fallback for
-     * non-semver tags (it once offered updates while on latest, v1.0.2 loop).
+     * Network-free release decision for a redirect-derived tag. Semver-vs-
+     * versionName decides; the trailing-int-vs-versionCode scheme is only a
+     * fallback for non-semver tags (it once offered updates while on latest,
+     * v1.0.2 loop). Release-page bodies are unavailable without the API, so
+     * notes are always empty.
      */
     internal fun decideRelease(
         tagName: String,
-        body: String,
-        assets: List<ReleaseAsset>,
         appVersionName: String,
-        currentVersionCode: Long
+        currentVersionCode: Long,
+        assetUrl: String,
+        sizeBytes: Long
     ): ReleaseDecision {
         val tagVersion = parseSemver(tagName)
         val appVersion = parseSemver(appVersionName)
@@ -331,53 +232,14 @@ object UpdateChecker {
                 }
             }
         }
-        val asset = selectApkAsset(assets)
-        if (asset == null || asset.browserDownloadUrl.isBlank()) {
+        if (assetUrl.isBlank()) {
             return ReleaseDecision.NoAsset
         }
         return ReleaseDecision.Available(
             version = tagName.trimStart('v', 'V').ifBlank { tagName },
-            notes = body,
-            assetUrl = asset.browserDownloadUrl,
-            sizeBytes = asset.size
-        )
-    }
-
-    /**
-     * Network-free decision from the persisted cache for a 304 response.
-     * Offers [ReleaseDecision.Available] only when the stored tag is NEWER
-     * than the installed version AND a cached asset URL exists; otherwise
-     * the install is already current.
-     */
-    internal fun decideCachedRelease(
-        cachedTag: String,
-        cachedNotes: String,
-        cachedAssetUrl: String,
-        cachedSize: Long,
-        appVersionName: String,
-        currentVersionCode: Long
-    ): ReleaseDecision {
-        if (cachedTag.isBlank()) return ReleaseDecision.UpToDate
-        val tagVersion = parseSemver(cachedTag)
-        val appVersion = parseSemver(appVersionName)
-        val isNewer = if (tagVersion != null && appVersion != null) {
-            compareSemver(tagVersion, appVersion) > 0
-        } else {
-            val latestCode = trailingVersionCode(cachedTag)
-            if (latestCode != null) {
-                latestCode > currentVersionCode
-            } else {
-                cachedTag.trimStart('v', 'V') != appVersionName
-            }
-        }
-        if (!isNewer || cachedAssetUrl.isBlank()) {
-            return ReleaseDecision.UpToDate
-        }
-        return ReleaseDecision.Available(
-            version = cachedTag.trimStart('v', 'V').ifBlank { cachedTag },
-            notes = cachedNotes,
-            assetUrl = cachedAssetUrl,
-            sizeBytes = cachedSize
+            notes = "",
+            assetUrl = assetUrl,
+            sizeBytes = sizeBytes
         )
     }
 

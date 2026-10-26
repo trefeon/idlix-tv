@@ -17,8 +17,6 @@
     <string name="update_err_empty">Respons rilis kosong</string>
     <string name="update_err_bad_data">Data rilis rusak</string>
     <string name="update_err_no_asset">Tidak ada file APK pada rilis ini</string>
-    <string name="update_err_rate_limited">Batas permintaan GitHub tercapai. Coba lagi setelah %1$s</string>
-    <string name="update_err_rate_limited_soon">Batas permintaan GitHub tercapai. Silakan coba lagi nanti</string>
     <string name="update_err_network">Kesalahan jaringan: %1$s</string>
     <string name="update_err_failed">Gagal memeriksa: %1$s</string>
     <string name="update_err_install">Gagal memasang: %1$s</string>
