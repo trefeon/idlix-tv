@@ -697,6 +697,7 @@ fun PlayerScreen(
 
             // Video Surface with high-visibility Netflix-style subtitles
             AndroidView(
+                modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         player = exoPlayer
