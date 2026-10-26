@@ -51,9 +51,9 @@ enum class TvPlaybackQuality(
         }
     }
 }
-
 private const val PLAYER_PREFS_FILE = "idlix_tv_prefs"
 private const val KEY_PLAYBACK_QUALITY = "playback_quality"
+private const val KEY_VIDEO_ZOOM = "video_zoom"
 
 fun loadPlaybackQuality(context: Context): TvPlaybackQuality {
     return try {
@@ -95,4 +95,46 @@ fun applyPlaybackQuality(player: ExoPlayer, quality: TvPlaybackQuality) {
         }
     }.build()
     player.trackSelectionParameters = next
+}
+
+/**
+ * Opt-in Zoom-fill aspect. FIT (false, default) shows the entire picture
+ * without cropping; Zoom (true) fills the screen, cropping the long edges.
+ * Persisted in the same app prefs file; applied via PlayerView resizeMode
+ * live (no player rebuild). NEVER RESIZE_MODE_FILL (would stretch).
+ */
+fun loadVideoZoom(context: Context): Boolean {
+    return try {
+        context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .getBoolean(KEY_VIDEO_ZOOM, false)
+    } catch (_: Exception) {
+        false
+    }
+}
+
+fun saveVideoZoom(context: Context, zoom: Boolean) {
+    try {
+        context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_VIDEO_ZOOM, zoom)
+            .apply()
+    } catch (_: Exception) {
+    }
+}
+
+/**
+ * Applies the aspect live on an existing PlayerView (no ExoPlayer rebuild).
+ * Zoom-aware subtitle rule lives with the caller: Zoom has no letterbox bars,
+ * so the subtitle bottom padding falls back to the 0.12 default; FIT keeps
+ * the letterbox-derived padding.
+ */
+fun applyVideoZoom(
+    playerView: androidx.media3.ui.PlayerView,
+    zoom: Boolean,
+) {
+    playerView.resizeMode =
+        if (zoom) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
 }

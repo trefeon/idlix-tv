@@ -174,6 +174,11 @@ fun PlayerScreen(
     val qualityReturnFocusRequester = remember { FocusRequester() }
     var isQualityPickerVisible by remember { mutableStateOf(false) }
     var selectedQuality by remember { mutableStateOf(loadPlaybackQuality(context)) }
+    // Zoom-fill aspect holder as a stable State object so the PlayerView
+    // factory's padding listeners always read the live value (FIT math
+    // would lift subtitles too high once Zoom removes the letterbox bars).
+    val zoomState = remember { mutableStateOf(loadVideoZoom(context)) }
+    var isZoom by zoomState
     var availableHeights by remember { mutableStateOf(emptySet<Int>()) }
     var videoW by remember { mutableIntStateOf(0) }
     var videoH by remember { mutableIntStateOf(0) }
@@ -681,6 +686,8 @@ fun PlayerScreen(
                     PlayerView(ctx).apply {
                         player = exoPlayer
                         useController = false
+                        // Saved aspect applies at build; FIT default never crops.
+                        applyVideoZoom(this, zoomState.value)
                         subtitleView?.let { subs ->
                             subs.setApplyEmbeddedStyles(false)
                             subs.setStyle(
@@ -697,8 +704,12 @@ fun PlayerScreen(
                             subs.setBottomPaddingFraction(0.12f)
                             fun refreshPadding() {
                                 val vs = exoPlayer.videoSize
+                                // Zoom fills the frame (no letterbox bars), so
+                                // subtitles fall back to the 0.12 default;
+                                // FIT keeps the letterbox-derived lift.
                                 subs.setBottomPaddingFraction(
-                                    letterboxBottomPadding(
+                                    if (zoomState.value) 0.12f
+                                    else letterboxBottomPadding(
                                         width.toFloat(),
                                         height.toFloat(),
                                         vs.width.toFloat(),
@@ -715,6 +726,27 @@ fun PlayerScreen(
                             )
                             addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> refreshPadding() }
                         }
+                    }
+                },
+                // Live aspect switch (modal row): guarded so the 500ms
+                // position-sync recompositions don't churn layout.
+                update = { view ->
+                    val target = if (isZoom) {
+                        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                    if (view.resizeMode != target) {
+                        applyVideoZoom(view, isZoom)
+                        view.subtitleView?.setBottomPaddingFraction(
+                            if (isZoom) 0.12f
+                            else letterboxBottomPadding(
+                                view.width.toFloat(),
+                                view.height.toFloat(),
+                                exoPlayer.videoSize.width.toFloat(),
+                                exoPlayer.videoSize.height.toFloat()
+                            )
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -820,6 +852,7 @@ fun PlayerScreen(
                 isVisible = isQualityPickerVisible,
                 currentQuality = selectedQuality,
                 availableHeights = availableHeights,
+                isZoom = isZoom,
                 onSelectQuality = { quality ->
                     selectedQuality = quality
                     savePlaybackQuality(context, quality)
@@ -827,6 +860,13 @@ fun PlayerScreen(
                         applyPlaybackQuality(exoPlayer, quality)
                     } catch (_: Exception) {}
                     closeQualityPicker()
+                },
+                // Aspect toggle stays in the modal (D-pad can flip back);
+                // the AndroidView update block applies it live.
+                onSelectAspect = { zoom ->
+                    isZoom = zoom
+                    saveVideoZoom(context, zoom)
+                    userInteractionCount++
                 },
                 onDismiss = {
                     closeQualityPicker()

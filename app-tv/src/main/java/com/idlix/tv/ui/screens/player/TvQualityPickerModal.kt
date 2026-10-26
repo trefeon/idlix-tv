@@ -62,7 +62,9 @@ fun TvQualityPickerModal(
     isVisible: Boolean,
     currentQuality: TvPlaybackQuality,
     availableHeights: Set<Int> = emptySet(),
+    isZoom: Boolean = false,
     onSelectQuality: (TvPlaybackQuality) -> Unit,
+    onSelectAspect: (Boolean) -> Unit = {},
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -151,15 +153,43 @@ fun TvQualityPickerModal(
 
                 item {
                     Text(
+                        text = "Picture size",
+                        color = NetflixWhite,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                item {
+                    QualityOptionCard(
+                        title = "Fit",
+                        subtitle = "Entire picture · never cropped",
+                        badge = "FIT",
+                        isSelected = !isZoom,
+                        onClick = { onSelectAspect(false) },
+                    )
+                }
+                item {
+                    QualityOptionCard(
+                        title = "Zoom",
+                        subtitle = "Fill screen · crops the long edges",
+                        badge = "ZOOM",
+                        isSelected = isZoom,
+                        onClick = { onSelectAspect(true) },
+                    )
+                }
+
+                item {
+                    Text(
                         text = "Applies instantly — playback keeps playing.",
                         color = NetflixLightGray,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-            }
         }
     }
+}
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
