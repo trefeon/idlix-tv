@@ -3,6 +3,7 @@ package com.idlix.tv.ui.screens.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.idlix.data.model.SearchResultItem
+import com.idlix.data.repository.IdlixRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +18,9 @@ data class SearchUiState(
     val error: String? = null
 )
 
-class SearchViewModel : ViewModel() {
+class SearchViewModel(
+    private val repository: IdlixRepository = IdlixRepository()
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -29,18 +32,26 @@ class SearchViewModel : ViewModel() {
         searchJob?.cancel()
 
         if (newQuery.isBlank()) {
-            _uiState.value = _uiState.value.copy(results = emptyList(), isLoading = false)
+            _uiState.value = _uiState.value.copy(results = emptyList(), isLoading = false, error = null)
             return
         }
 
         searchJob = viewModelScope.launch {
             delay(400) // debounce
-            // Direct source not yet wired: empty-state safe, no backend call.
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                results = emptyList(),
-                error = null
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val results = repository.search(newQuery.trim())
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    results = results,
+                    error = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.localizedMessage ?: "Search failed"
+                )
+            }
         }
     }
 }

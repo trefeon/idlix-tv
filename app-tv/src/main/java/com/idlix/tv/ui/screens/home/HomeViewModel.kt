@@ -7,6 +7,7 @@ import com.idlix.data.local.WatchHistoryStore
 import com.idlix.data.model.MovieItem
 import com.idlix.data.model.SeriesItem
 import com.idlix.data.model.WatchHistoryItem
+import com.idlix.data.repository.IdlixRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +28,7 @@ class HomeViewModel(
     application: Application
 ) : AndroidViewModel(application) {
 
+    private val repository = IdlixRepository()
     private val historyStore = WatchHistoryStore.getInstance(application.applicationContext)
 
     private val _uiState = MutableStateFlow(HomeUiState(isLoading = false))
@@ -45,17 +47,45 @@ class HomeViewModel(
 
     fun loadHomeData() {
         viewModelScope.launch {
-            val unfinished = historyStore.getUnfinishedItems()
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                heroMovie = null,
-                continueWatching = unfinished,
-                trending = emptyList(),
-                popularMovies = emptyList(),
-                popularSeries = emptyList(),
-                actionMovies = emptyList(),
-                error = null
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                var trending = repository.getTrendingMovies()
+                var popular = repository.getPopularMovies()
+                var series = repository.getPopularSeries()
+
+                // If all returned empty, wait 1s and retry once (network socket warmup on startup)
+                if (trending.isEmpty() && popular.isEmpty() && series.isEmpty()) {
+                    kotlinx.coroutines.delay(1000)
+                    trending = repository.getTrendingMovies()
+                    popular = repository.getPopularMovies()
+                    series = repository.getPopularSeries()
+                }
+
+                if (trending.isEmpty() && popular.isEmpty() && series.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Gagal memuat rekomendasi film & serial. Silakan periksa koneksi internet."
+                    )
+                    return@launch
+                }
+
+                val action = repository.getMoviesByGenre("action")
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    heroMovie = trending.firstOrNull() ?: popular.firstOrNull(),
+                    trending = trending,
+                    popularMovies = popular,
+                    popularSeries = series,
+                    actionMovies = action,
+                    error = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.localizedMessage ?: "Failed to load data"
+                )
+            }
         }
     }
 

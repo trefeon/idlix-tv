@@ -71,20 +71,31 @@ object UpdateChecker {
                 } catch (e: Exception) {
                     return@withContext UpdateState.Failed("Bad release data")
                 }
-                val latestCode = trailingVersionCode(release.tagName)
-                if (latestCode != null) {
-                    if (latestCode <= currentVersionCode) {
+                // Prefer semantic comparison: the installed app is up to date
+                // when its versionName is equal to or newer than the tag.
+                // versionCode is only a fallback for non-semver tags.
+                val tagVersion = parseSemver(release.tagName)
+                val appVersion = parseSemver(BuildConfig.VERSION_NAME)
+                if (tagVersion != null && appVersion != null) {
+                    if (compareSemver(appVersion, tagVersion) >= 0) {
                         return@withContext UpdateState.UpToDate(BuildConfig.VERSION_NAME)
                     }
                 } else {
-                    // Tag has no trailing int (e.g. "release-abc"): fall back to
-                    // versionName comparison; equal means up to date.
-                    val stripped = release.tagName.trimStart('v', 'V')
-                    if (stripped.isBlank()) {
-                        return@withContext UpdateState.Failed("Bad release data")
-                    }
-                    if (stripped == BuildConfig.VERSION_NAME) {
-                        return@withContext UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+                    val latestCode = trailingVersionCode(release.tagName)
+                    if (latestCode != null) {
+                        if (latestCode <= currentVersionCode) {
+                            return@withContext UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+                        }
+                    } else {
+                        // Tag has no trailing int (e.g. "release-abc"): fall back to
+                        // versionName comparison; equal means up to date.
+                        val stripped = release.tagName.trimStart('v', 'V')
+                        if (stripped.isBlank()) {
+                            return@withContext UpdateState.Failed("Bad release data")
+                        }
+                        if (stripped == BuildConfig.VERSION_NAME) {
+                            return@withContext UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+                        }
                     }
                 }
                 val asset = release.assets.firstOrNull()
@@ -103,6 +114,30 @@ object UpdateChecker {
         } catch (e: Exception) {
             UpdateState.Failed(e.message?.take(120) ?: "Check failed")
         }
+    }
+
+    /**
+     * Parses "1.0.3" (leading 'v' allowed) into [major, minor, patch].
+     * Non-numeric suffixes stop parsing (e.g. "1.0.3-beta" -> [1, 0, 3]).
+     * Returns null when no leading numeric component exists.
+     */
+    internal fun parseSemver(version: String): List<Int>? {
+        val stripped = version.trim().trimStart('v', 'V')
+        if (stripped.isEmpty()) return null
+        val parts = stripped.split('.', '-').take(3).map { part ->
+            part.takeWhile { it.isDigit() }.takeIf { it.isNotEmpty() }?.toIntOrNull()
+        }
+        if (parts.firstOrNull() == null) return null
+        return (parts.map { it ?: 0 } + listOf(0, 0, 0)).take(3)
+    }
+
+    /** Lexicographic compare; >0 means [a] is newer than [b]. */
+    internal fun compareSemver(a: List<Int>, b: List<Int>): Int {
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val diff = (a.getOrElse(i) { 0 }) - (b.getOrElse(i) { 0 })
+            if (diff != 0) return diff
+        }
+        return 0
     }
 
     /**

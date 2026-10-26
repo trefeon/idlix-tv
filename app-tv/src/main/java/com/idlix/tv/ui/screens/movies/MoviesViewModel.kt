@@ -1,10 +1,13 @@
 package com.idlix.tv.ui.screens.movies
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.idlix.data.model.MovieItem
+import com.idlix.data.repository.IdlixRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class MoviesUiState(
     val isLoading: Boolean = false,
@@ -18,7 +21,9 @@ data class MoviesUiState(
     val error: String? = null
 )
 
-class MoviesViewModel : ViewModel() {
+class MoviesViewModel(
+    private val repository: IdlixRepository = IdlixRepository()
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MoviesUiState(isLoading = false))
     val uiState: StateFlow<MoviesUiState> = _uiState.asStateFlow()
@@ -28,17 +33,44 @@ class MoviesViewModel : ViewModel() {
     }
 
     fun loadMoviesData() {
-        _uiState.value = MoviesUiState(
-            isLoading = false,
-            heroMovie = null,
-            popularMovies = emptyList(),
-            latestMovies = emptyList(),
-            actionMovies = emptyList(),
-            comedyMovies = emptyList(),
-            horrorMovies = emptyList(),
-            sciFiMovies = emptyList(),
-            error = null
-        )
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val popular = repository.getPopularMovies()
+                val latest = repository.getMoviesBySort("latest")
+                val action = repository.getMoviesByGenre("action")
+                val comedy = repository.getMoviesByGenre("comedy")
+                val horror = repository.getMoviesByGenre("horror")
+                val sciFi = repository.getMoviesByGenre("science-fiction")
+
+                if (popular.isEmpty() && latest.isEmpty() && action.isEmpty() &&
+                    comedy.isEmpty() && horror.isEmpty() && sciFi.isEmpty()
+                ) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Gagal memuat film. Silakan periksa koneksi internet."
+                    )
+                    return@launch
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    heroMovie = popular.firstOrNull() ?: latest.firstOrNull(),
+                    popularMovies = popular,
+                    latestMovies = latest,
+                    actionMovies = action,
+                    comedyMovies = comedy,
+                    horrorMovies = horror,
+                    sciFiMovies = sciFi,
+                    error = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.localizedMessage ?: "Failed to load movies"
+                )
+            }
+        }
     }
 
     fun setHeroMovie(movie: MovieItem) {

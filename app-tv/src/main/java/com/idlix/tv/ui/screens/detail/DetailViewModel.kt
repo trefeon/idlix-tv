@@ -1,13 +1,16 @@
 package com.idlix.tv.ui.screens.detail
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.idlix.data.model.EpisodeItem
 import com.idlix.data.model.MovieDetail
 import com.idlix.data.model.Season
 import com.idlix.data.model.SeriesDetail
+import com.idlix.data.repository.IdlixRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class DetailUiState(
     val isLoading: Boolean = false,
@@ -19,30 +22,96 @@ data class DetailUiState(
     val error: String? = null
 )
 
-class DetailViewModel : ViewModel() {
+class DetailViewModel(
+    private val repository: IdlixRepository = IdlixRepository()
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState(isLoading = false))
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
 
     fun loadDetail(contentType: String, slug: String) {
-        // Direct source not yet wired: empty-state safe, no backend call.
-        _uiState.value = DetailUiState(
-            isLoading = false,
-            movie = null,
-            series = null,
-            selectedSeason = null,
-            episodes = emptyList()
-        )
+        viewModelScope.launch {
+            _uiState.value = DetailUiState(isLoading = true)
+            try {
+                if (contentType == "tv_series" || contentType == "series") {
+                    val series = repository.getSeriesDetail(slug)
+                    if (series != null) {
+                        val defaultSeason = series.defaultSeason
+                        val initialSeason = series.seasons.firstOrNull { it.seasonNumber == defaultSeason?.seasonNumber }
+                            ?: defaultSeason?.let { Season(id = it.id, seasonNumber = it.seasonNumber, name = it.name) }
+                            ?: series.seasons.firstOrNull()
+                            ?: Season(seasonNumber = 1, name = "Season 1")
+                        val initialEpisodes = defaultSeason?.episodes ?: emptyList()
+                        _uiState.value = DetailUiState(
+                            isLoading = false,
+                            series = series,
+                            selectedSeason = initialSeason,
+                            episodes = initialEpisodes
+                        )
+                    } else {
+                        _uiState.value = DetailUiState(
+                            isLoading = false,
+                            error = "Failed to load TV series details"
+                        )
+                    }
+                } else {
+                    val movie = repository.getMovieDetail(slug)
+                    if (movie != null) {
+                        _uiState.value = DetailUiState(
+                            isLoading = false,
+                            movie = movie
+                        )
+                    } else {
+                        _uiState.value = DetailUiState(
+                            isLoading = false,
+                            error = "Failed to load movie details"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.value = DetailUiState(
+                    isLoading = false,
+                    error = e.localizedMessage ?: "Network error loading details"
+                )
+            }
+        }
     }
 
     fun selectSeason(seriesSlug: String, season: Season) {
-        if (_uiState.value.selectedSeason?.id == season.id) {
+        if (_uiState.value.selectedSeason?.seasonNumber == season.seasonNumber &&
+            _uiState.value.episodes.isNotEmpty()
+        ) {
             return
         }
-        // No episode fetch without direct source: keep current episodes, just switch selection.
-        _uiState.value = _uiState.value.copy(
-            selectedSeason = season,
-            isLoadingEpisodes = false
-        )
+        viewModelScope.launch {
+            val series = _uiState.value.series
+            val defaultSeason = series?.defaultSeason
+            if (defaultSeason != null && defaultSeason.seasonNumber == season.seasonNumber &&
+                defaultSeason.episodes.isNotEmpty()
+            ) {
+                _uiState.value = _uiState.value.copy(
+                    selectedSeason = season,
+                    episodes = defaultSeason.episodes,
+                    isLoadingEpisodes = false
+                )
+                return@launch
+            }
+
+            _uiState.value = _uiState.value.copy(
+                selectedSeason = season,
+                isLoadingEpisodes = true
+            )
+            try {
+                val epRes = repository.getEpisodeDetail(seriesSlug, season.seasonNumber, 1)
+                val newEpisodes = epRes?.season?.episodes ?: emptyList()
+                _uiState.value = _uiState.value.copy(
+                    episodes = newEpisodes.ifEmpty { _uiState.value.episodes },
+                    isLoadingEpisodes = false
+                )
+            } catch (e: Exception) {
+                // Keep current episodes; surface nothing louder than the spinner stopping.
+                _uiState.value = _uiState.value.copy(isLoadingEpisodes = false)
+            }
+        }
     }
 }
