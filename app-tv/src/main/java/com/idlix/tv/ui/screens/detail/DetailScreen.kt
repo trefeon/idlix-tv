@@ -31,6 +31,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
+import com.idlix.data.local.WatchHistoryStore
+import com.idlix.tv.ui.components.TvErrorState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -69,6 +72,7 @@ fun DetailScreen(
     contentType: String,
     slug: String,
     onNavigateToPlayer: (contentType: String, contentId: String, title: String, poster: String?, backdrop: String?, slug: String?, season: Int?, episode: Int?) -> Unit,
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DetailViewModel = viewModel()
 ) {
@@ -78,6 +82,19 @@ fun DetailScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val playButtonFocusRequester = remember { FocusRequester() }
+
+    // Latest unfinished history entry for this title (matched by slug, or movie id):
+    // drives the Resume label + seeks to the saved position via the player.
+    val context = LocalContext.current
+    val historyStore = remember(context) { WatchHistoryStore.getInstance(context) }
+    val history by historyStore.historyFlow.collectAsState()
+    val resumeItem = remember(history, slug, uiState.movie?.id) {
+        val movieId = uiState.movie?.id
+        history
+            .filter { it.slug == slug || (movieId?.isNotBlank() == true && it.contentId == movieId) }
+            .maxByOrNull { it.lastWatchedTime }
+            ?.takeIf { it.isUnfinished }
+    }
 
     // Place default focus on "Putar Sekarang" / "Putar Episode 1" as soon as media details load
     LaunchedEffect(uiState.isLoading, uiState.movie, uiState.series) {
@@ -98,10 +115,13 @@ fun DetailScreen(
             TvLoadingSpinner(
                 modifier = Modifier.align(Alignment.Center)
             )
-        } else if (uiState.error != null) {
-            Text(
-                text = uiState.error ?: "",
-                color = NetflixWhite,
+        } else if (uiState.error != null || uiState.errorRes != null) {
+            val errorMessage = uiState.error
+                ?: uiState.errorRes?.let { stringResource(it) }.orEmpty()
+            TvErrorState(
+                message = errorMessage,
+                onRetry = { viewModel.loadDetail(contentType, slug) },
+                onBack = onBack,
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
@@ -184,7 +204,11 @@ fun DetailScreen(
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (contentType == "movie") "F I L M" else "S E R I E S",
+                                    text = if (contentType == "movie") {
+                                        stringResource(R.string.kicker_film)
+                                    } else {
+                                        stringResource(R.string.kicker_series)
+                                    },
                                     color = NetflixLightGray,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -212,7 +236,7 @@ fun DetailScreen(
                                 rating.toDoubleOrNull()?.let { vote ->
                                     val percent = ((vote * 10).toInt()).coerceIn(0, 100)
                                     Text(
-                                        text = "$percent% Match",
+                                        text = stringResource(R.string.match_score_format, percent),
                                         color = Color(0xFF46D369),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
@@ -250,6 +274,36 @@ fun DetailScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+
+                                // Duration (movies) / season + episode counts (series)
+                                if (contentType == "movie") {
+                                    val runtimeMinutes = uiState.movie?.duration
+                                        ?: uiState.movie?.runtime
+                                    if (runtimeMinutes != null && runtimeMinutes > 0) {
+                                        Text(
+                                            text = stringResource(R.string.movie_duration_format, runtimeMinutes),
+                                            color = NetflixLightGray,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                } else {
+                                    val seasonCount = uiState.series?.seasons?.size?.takeIf { it > 0 }
+                                        ?: uiState.series?.numberOfSeasons?.takeIf { it > 0 }
+                                    val episodeCount = uiState.series?.defaultSeason?.episodes?.size?.takeIf { it > 0 }
+                                        ?: uiState.episodes.size.takeIf { it > 0 }
+                                        ?: uiState.series?.numberOfEpisodes?.takeIf { it > 0 }
+                                    if (seasonCount != null && episodeCount != null) {
+                                        Text(
+                                            text = stringResource(
+                                                R.string.series_counts_format,
+                                                seasonCount,
+                                                episodeCount
+                                            ),
+                                            color = NetflixLightGray,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
                             }
 
                             if (genres.isNotBlank()) {
@@ -277,7 +331,21 @@ fun DetailScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Play Button with default focus and clear white outline ring
+                            // Play / Resume Button with default focus and clear white outline ring.
+                            // When unfinished history exists for this title, resume the saved
+                            // episode (series) at its saved position — the player seeks
+                            // automatically via WatchHistoryStore.getSavedPosition(contentId).
+                            val resumeMinutes = resumeItem?.remainingMinutes?.takeIf { it > 0 }?.toInt()
+                            val playLabel = when {
+                                resumeItem != null && resumeMinutes != null -> {
+                                    val resume = stringResource(R.string.resume_play)
+                                    val remaining = stringResource(R.string.remaining_minutes, resumeMinutes)
+                                    "$resume · $remaining"
+                                }
+                                resumeItem != null -> stringResource(R.string.resume_play)
+                                contentType == "movie" -> stringResource(R.string.play_now)
+                                else -> stringResource(R.string.play_episode_1)
+                            }
                             Button(
                                 onClick = {
                                     if (contentType == "movie") {
@@ -285,19 +353,33 @@ fun DetailScreen(
                                             onNavigateToPlayer("movie", it.id, it.title, it.fullPosterUrl, it.fullBackdropUrl, it.slug, null, null)
                                         }
                                     } else {
-                                        val firstEp = uiState.episodes.firstOrNull()
-                                            ?: uiState.series?.defaultSeason?.episodes?.firstOrNull()
-                                        if (firstEp != null) {
+                                        val resume = resumeItem
+                                        if (resume != null) {
                                             onNavigateToPlayer(
-                                                "episode",
-                                                firstEp.id,
-                                                "${uiState.series?.title} - ${firstEp.name}",
-                                                firstEp.fullStillUrl,
-                                                uiState.series?.fullBackdropUrl,
-                                                uiState.series?.slug,
-                                                uiState.selectedSeason?.seasonNumber ?: 1,
-                                                firstEp.episodeNumber
+                                                resume.contentType,
+                                                resume.contentId,
+                                                resume.title,
+                                                resume.posterUrl,
+                                                resume.backdropUrl,
+                                                resume.slug,
+                                                resume.seasonNumber,
+                                                resume.episodeNumber
                                             )
+                                        } else {
+                                            val firstEp = uiState.episodes.firstOrNull()
+                                                ?: uiState.series?.defaultSeason?.episodes?.firstOrNull()
+                                            if (firstEp != null) {
+                                                onNavigateToPlayer(
+                                                    "episode",
+                                                    firstEp.id,
+                                                    "${uiState.series?.title} - ${firstEp.name}",
+                                                    firstEp.fullStillUrl,
+                                                    uiState.series?.fullBackdropUrl,
+                                                    uiState.series?.slug,
+                                                    uiState.selectedSeason?.seasonNumber ?: 1,
+                                                    firstEp.episodeNumber
+                                                )
+                                            }
                                         }
                                     }
                                 },
@@ -322,11 +404,7 @@ fun DetailScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (contentType == "movie") {
-                                        stringResource(R.string.play_now)
-                                    } else {
-                                        stringResource(R.string.play_episode_1)
-                                    },
+                                    text = playLabel,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
                                 )
@@ -487,7 +565,11 @@ fun TvEpisodeCard(
 
             Column(modifier = Modifier.padding(8.dp)) {
                 Text(
-                    text = "${episode.episodeNumber}. ${episode.name}",
+                    text = stringResource(
+                        R.string.episode_title_format,
+                        episode.episodeNumber,
+                        episode.name
+                    ),
                     color = NetflixWhite,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
@@ -507,57 +589,42 @@ fun TvEpisodeCard(
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TvCastCard(cast: CastMember) {
-    Card(
-        onClick = {},
+    // Deliberately NOT focusable: cast rows are informational only (no detail
+    // destination), so a focusable no-op Card would trap the D-pad on a dead control.
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(105.dp)
-            .padding(vertical = 4.dp),
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
-        colors = CardDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = NetflixDarkCard
-        ),
-        scale = CardDefaults.scale(focusedScale = 1.08f),
-        border = CardDefaults.border(
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, NetflixWhite)
-            )
-        )
+            .padding(vertical = 4.dp)
+            .background(Color.Transparent, RoundedCornerShape(8.dp))
+            .padding(vertical = 8.dp, horizontal = 4.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        AsyncImage(
+            model = cast.fullProfileUrl,
+            contentDescription = cast.name,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp, horizontal = 4.dp)
-        ) {
-            AsyncImage(
-                model = cast.fullProfileUrl,
-                contentDescription = cast.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(NetflixDarkCard)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = cast.name,
-                color = NetflixWhite,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = cast.character ?: "",
-                color = NetflixLightGray,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(NetflixDarkCard)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = cast.name,
+            color = NetflixWhite,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = cast.character ?: "",
+            color = NetflixLightGray,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

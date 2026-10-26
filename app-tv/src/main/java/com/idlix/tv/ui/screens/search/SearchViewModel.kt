@@ -15,7 +15,8 @@ data class SearchUiState(
     val query: String = "",
     val isLoading: Boolean = false,
     val results: List<SearchResultItem> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val errorRes: Int? = null
 )
 
 class SearchViewModel(
@@ -32,24 +33,26 @@ class SearchViewModel(
         searchJob?.cancel()
 
         if (newQuery.isBlank()) {
-            _uiState.value = _uiState.value.copy(results = emptyList(), isLoading = false, error = null)
+            _uiState.value = _uiState.value.copy(results = emptyList(), isLoading = false, error = null, errorRes = null)
             return
         }
 
         searchJob = viewModelScope.launch {
             delay(400) // debounce
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, errorRes = null)
             try {
                 val results = repository.search(newQuery.trim())
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     results = results,
-                    error = null
+                    error = null,
+                    errorRes = null
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.localizedMessage ?: "Search failed"
+                    error = e.localizedMessage,
+                    errorRes = com.idlix.tv.R.string.search_error
                 )
             }
         }

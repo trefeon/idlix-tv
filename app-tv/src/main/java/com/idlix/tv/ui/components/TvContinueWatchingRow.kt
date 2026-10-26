@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.tv.foundation.lazy.list.TvLazyRow
+import androidx.tv.foundation.lazy.list.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -37,7 +37,7 @@ fun TvContinueWatchingRow(
             modifier = Modifier.padding(start = 48.dp, bottom = 8.dp)
         )
 
-        LazyRow(
+        TvLazyRow(
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)
         ) {
             items(items, key = { it.contentId }) { item ->

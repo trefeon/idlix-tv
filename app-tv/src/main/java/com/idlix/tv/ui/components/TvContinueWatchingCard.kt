@@ -29,8 +29,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.idlix.tv.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -126,7 +128,7 @@ fun TvContinueWatchingCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play",
+                                    contentDescription = stringResource(R.string.play),
                         tint = NetflixWhite,
                         modifier = Modifier
                             .size(22.dp)
@@ -156,7 +158,7 @@ fun TvContinueWatchingCard(
                 val subtitle: String = if (!epTitle.isNullOrBlank()) {
                     epTitle
                 } else if (item.remainingMinutes > 0) {
-                    "${item.remainingMinutes} min"
+                    stringResource(R.string.remaining_minutes, item.remainingMinutes.toInt())
                 } else ""
                 if (subtitle.isNotBlank()) {
                     Text(

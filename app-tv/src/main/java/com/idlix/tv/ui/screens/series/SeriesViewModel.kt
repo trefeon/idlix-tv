@@ -17,7 +17,8 @@ data class SeriesUiState(
     val dramaSeries: List<MovieItem> = emptyList(),
     val actionSeries: List<MovieItem> = emptyList(),
     val comedySeries: List<MovieItem> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val errorRes: Int? = null
 )
 
 class SeriesViewModel(
@@ -33,7 +34,7 @@ class SeriesViewModel(
 
     fun loadSeriesData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, errorRes = null)
             try {
                 val popular = repository.getPopularSeries().map { it.toMovieItem() }
                 val latest = repository.getSeriesBySort("latest").map { it.toMovieItem() }
@@ -46,7 +47,8 @@ class SeriesViewModel(
                 ) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "Gagal memuat serial TV. Silakan periksa koneksi internet."
+                        error = null,
+                        errorRes = com.idlix.tv.R.string.error_series_load
                     )
                     return@launch
                 }
@@ -59,12 +61,14 @@ class SeriesViewModel(
                     dramaSeries = drama,
                     actionSeries = action,
                     comedySeries = comedy,
-                    error = null
+                    error = null,
+                    errorRes = null
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.localizedMessage ?: "Failed to load series"
+                    error = e.localizedMessage,
+                    errorRes = com.idlix.tv.R.string.error_series_load
                 )
             }
         }

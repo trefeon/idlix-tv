@@ -5,8 +5,9 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Looper
 import android.view.KeyEvent
-import androidx.annotation.OptIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Border
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.C
@@ -190,6 +192,17 @@ fun PlayerScreen(
         isQualityPickerVisible = false
         qualityDismissReturn = true
     }
+    val speedReturnFocusRequester = remember { FocusRequester() }
+    var isSpeedPickerVisible by remember { mutableStateOf(false) }
+    var selectedSpeed by remember { mutableStateOf(loadPlaybackSpeed(context)) }
+    var availableAudioTracks by remember { mutableStateOf(emptyList<TvAudioOption>()) }
+    var selectedAudioLang by remember { mutableStateOf(loadAudioLanguage(context)) }
+    val tryAgainFocusRequester = remember { FocusRequester() }
+    var speedDismissReturn by remember { mutableStateOf(false) }
+    fun closeSpeedPicker() {
+        isSpeedPickerVisible = false
+        speedDismissReturn = true
+    }
 
     LaunchedEffect(contentType, contentId) {
         viewModel.loadStream(
@@ -209,8 +222,8 @@ fun PlayerScreen(
     }
 
     // Auto-hide controls after 6 seconds of inactivity, paused during modal, scrubbing, or next episode prompt
-    LaunchedEffect(showControls, uiState.isSubtitlePickerVisible, isQualityPickerVisible, isScrubbing, userInteractionCount, isNextPromptVisible) {
-        if (uiState.isSubtitlePickerVisible || isQualityPickerVisible || isScrubbing || isNextPromptVisible) {
+    LaunchedEffect(showControls, uiState.isSubtitlePickerVisible, isQualityPickerVisible, isSpeedPickerVisible, isScrubbing, userInteractionCount, isNextPromptVisible) {
+        if (uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible || isScrubbing || isNextPromptVisible) {
             // Keep controls open or don't steal focus from prompt / modals
             return@LaunchedEffect
         }
@@ -243,6 +256,28 @@ fun PlayerScreen(
             delay(50)
             try {
                 qualityReturnFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Return focus to the Speed button after the picker closes (same deferred
+    // pattern as the quality picker).
+    LaunchedEffect(isSpeedPickerVisible, speedDismissReturn) {
+        if (!isSpeedPickerVisible && speedDismissReturn) {
+            speedDismissReturn = false
+            delay(50)
+            try {
+                speedReturnFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Default focus on Try Again as soon as a playback error renders.
+    LaunchedEffect(uiState.error) {
+        if (uiState.error != null) {
+            delay(50)
+            try {
+                tryAgainFocusRequester.requestFocus()
             } catch (_: Exception) {}
         }
     }
@@ -282,7 +317,7 @@ fun PlayerScreen(
                             },
                             onSeekForward = {
                                 val p = activePlayer
-                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible) {
+                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible) {
                                     false
                                 } else {
                                     p.seekTo((p.currentPosition + 10000L).coerceAtMost(p.duration))
@@ -292,7 +327,7 @@ fun PlayerScreen(
                             },
                             onSeekBackward = {
                                 val p = activePlayer
-                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible) {
+                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible) {
                                     false
                                 } else {
                                     p.seekTo((p.currentPosition - 10000L).coerceAtLeast(0L))
@@ -301,7 +336,7 @@ fun PlayerScreen(
                                 }
                             },
                             onOpenSubtitlePicker = {
-                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible ||
+                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible ||
                                     uiState.resolvedStream == null
                                 ) {
                                     false
@@ -312,7 +347,7 @@ fun PlayerScreen(
                                 }
                             },
                             onToggleControls = {
-                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible) {
+                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible) {
                                     false
                                 } else {
                                     showControls = !showControls
@@ -332,6 +367,9 @@ fun PlayerScreen(
                         KeyEvent.KEYCODE_BACK -> {
                             if (isQualityPickerVisible) {
                                 closeQualityPicker()
+                                true
+                            } else if (isSpeedPickerVisible) {
+                                closeSpeedPicker()
                                 true
                             } else if (uiState.isSubtitlePickerVisible) {
                                 viewModel.closeSubtitlePicker()
@@ -456,8 +494,18 @@ fun PlayerScreen(
                         onClick = { viewModel.loadStream(contentType, contentId, title) },
                         colors = ButtonDefaults.colors(
                             containerColor = NetflixRed,
-                            contentColor = NetflixWhite
-                        )
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixRed,
+                            focusedContentColor = NetflixWhite
+                        ),
+                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                        border = ButtonDefaults.border(
+                            focusedBorder = Border(
+                                border = BorderStroke(2.dp, NetflixWhite)
+                            )
+                        ),
+                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                        modifier = Modifier.focusRequester(tryAgainFocusRequester)
                     ) {
                         Text(text = stringResource(R.string.try_again), fontSize = 14.sp)
                     }
@@ -466,8 +514,17 @@ fun PlayerScreen(
                         onClick = onBack,
                         colors = ButtonDefaults.colors(
                             containerColor = NetflixLightGray.copy(alpha = 0.3f),
-                            contentColor = NetflixWhite
-                        )
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixWhite,
+                            focusedContentColor = NetflixLightGray
+                        ),
+                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                        border = ButtonDefaults.border(
+                            focusedBorder = Border(
+                                border = BorderStroke(2.dp, NetflixWhite)
+                            )
+                        ),
+                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
                     ) {
                         Text(text = stringResource(R.string.back), fontSize = 14.sp)
                     }
@@ -601,10 +658,16 @@ fun PlayerScreen(
                         .setPreferredTextLanguage("id")
                         .setSelectUndeterminedTextLanguage(true)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .apply {
+                            loadAudioLanguage(context)?.let { setPreferredAudioLanguage(it) }
+                        }
                         .build()
 
                     // Restore the persisted quality cap live (no player recreation).
                     applyPlaybackQuality(this, loadPlaybackQuality(context))
+
+                    // Restore the persisted playback speed (no rebuffer).
+                    applyPlaybackSpeed(this, loadPlaybackSpeed(context))
 
                     prepare()
                     if (uiState.initialPositionMs > 0) {
@@ -676,6 +739,18 @@ fun PlayerScreen(
                                 .filter { it.sampleMimeType?.startsWith("video/") == true }
                                 .mapNotNull { it.height.takeIf { h -> h > 0 } }
                                 .toSet()
+                            availableAudioTracks = tracks.groups
+                                .flatMap { group -> (0 until group.length).map { group.getTrackFormat(it) } }
+                                .filter { it.sampleMimeType?.startsWith("audio/") == true }
+                                .mapNotNull { format ->
+                                    val lang = format.language?.takeIf { it.isNotBlank() }
+                                        ?: return@mapNotNull null
+                                    TvAudioOption(
+                                        language = lang,
+                                        label = format.label?.takeIf { it.isNotBlank() } ?: lang
+                                    )
+                                }
+                                .distinctBy { it.language }
                         } catch (_: Exception) {}
                     }
                 }
@@ -768,7 +843,7 @@ fun PlayerScreen(
             // D-Pad Player Controls
             TvPlayerControls(
                 title = resolved.title,
-                isVisible = showControls && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible,
+                isVisible = showControls && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible && !isSpeedPickerVisible,
                 isPlaying = isPlaying,
                 currentPosMs = currentPos,
                 durationMs = duration,
@@ -828,12 +903,18 @@ fun PlayerScreen(
                 bufferedPosMs = bufferedPos,
                 videoWidth = videoW,
                 videoHeight = videoH,
-                qualityLabel = selectedQuality.title,
+                qualityLabel = stringResource(selectedQuality.titleRes),
                 onOpenQualityPicker = {
                     isQualityPickerVisible = true
                     userInteractionCount++
                 },
                 qualityButtonModifier = Modifier.focusRequester(qualityReturnFocusRequester),
+                speedLabel = selectedSpeed.label,
+                onOpenSpeedPicker = {
+                    isSpeedPickerVisible = true
+                    userInteractionCount++
+                },
+                speedButtonModifier = Modifier.focusRequester(speedReturnFocusRequester),
             )
 
             // Subtitle Picker Modal (IDLIX & SubDL.com third party)
@@ -858,6 +939,16 @@ fun PlayerScreen(
                 },
                 onDismiss = {
                     viewModel.closeSubtitlePicker()
+                },
+                availableAudioTracks = availableAudioTracks,
+                selectedAudioLanguage = selectedAudioLang,
+                onSelectAudio = { language ->
+                    selectedAudioLang = language
+                    saveAudioLanguage(context, language)
+                    val selector = exoPlayer.trackSelectionParameters.buildUpon()
+                        .setPreferredAudioLanguage(language)
+                    exoPlayer.trackSelectionParameters = selector.build()
+                    userInteractionCount++
                 }
             )
             // Quality Picker Modal (live cap, no player recreation)
@@ -885,13 +976,29 @@ fun PlayerScreen(
                     closeQualityPicker()
                 }
             )
+            // Speed Picker Modal (live rate, no player rebuild)
+            TvSpeedPickerModal(
+                isVisible = isSpeedPickerVisible,
+                currentSpeed = selectedSpeed,
+                onSelectSpeed = { speed ->
+                    selectedSpeed = speed
+                    savePlaybackSpeed(context, speed)
+                    try {
+                        applyPlaybackSpeed(exoPlayer, speed)
+                    } catch (_: Exception) {}
+                    closeSpeedPicker()
+                },
+                onDismiss = {
+                    closeSpeedPicker()
+                }
+            )
             // Next Episode Prompt for TV Series (When <= 90s remaining)
             if (uiState.nextEpisode != null) {
                 val remainingSec = (remainingMs / 1000).toInt().coerceAtLeast(0)
                 TvNextEpisodePrompt(
                     nextEpisode = uiState.nextEpisode!!,
                     remainingSeconds = remainingSec,
-                    isVisible = isNextPromptVisible && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible,
+                    isVisible = isNextPromptVisible && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible && !isSpeedPickerVisible,
                     onPlayNext = {
                         viewModel.playNextEpisode()
                     },

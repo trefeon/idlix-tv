@@ -156,7 +156,8 @@ class PlayerViewModel(
             }.onFailure { err ->
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = err.localizedMessage ?: "Failed to play stream"
+                    error = err.localizedMessage
+                        ?: getApplication<Application>().getString(com.idlix.tv.R.string.failed_to_play)
                 )
             }
         }

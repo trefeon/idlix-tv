@@ -18,7 +18,8 @@ data class MoviesUiState(
     val comedyMovies: List<MovieItem> = emptyList(),
     val horrorMovies: List<MovieItem> = emptyList(),
     val sciFiMovies: List<MovieItem> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val errorRes: Int? = null
 )
 
 class MoviesViewModel(
@@ -34,7 +35,7 @@ class MoviesViewModel(
 
     fun loadMoviesData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, errorRes = null)
             try {
                 val popular = repository.getPopularMovies()
                 val latest = repository.getMoviesBySort("latest")
@@ -48,7 +49,8 @@ class MoviesViewModel(
                 ) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "Gagal memuat film. Silakan periksa koneksi internet."
+                        error = null,
+                        errorRes = com.idlix.tv.R.string.error_movies_load
                     )
                     return@launch
                 }
@@ -62,12 +64,14 @@ class MoviesViewModel(
                     comedyMovies = comedy,
                     horrorMovies = horror,
                     sciFiMovies = sciFi,
-                    error = null
+                    error = null,
+                    errorRes = null
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.localizedMessage ?: "Failed to load movies"
+                    error = e.localizedMessage,
+                    errorRes = com.idlix.tv.R.string.error_movies_load
                 )
             }
         }

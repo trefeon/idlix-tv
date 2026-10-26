@@ -19,7 +19,8 @@ data class DetailUiState(
     val selectedSeason: Season? = null,
     val episodes: List<EpisodeItem> = emptyList(),
     val isLoadingEpisodes: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val errorRes: Int? = null
 )
 
 class DetailViewModel(
@@ -51,7 +52,8 @@ class DetailViewModel(
                     } else {
                         _uiState.value = DetailUiState(
                             isLoading = false,
-                            error = "Failed to load TV series details"
+                            error = null,
+                            errorRes = com.idlix.tv.R.string.error_series_detail
                         )
                     }
                 } else {
@@ -64,14 +66,21 @@ class DetailViewModel(
                     } else {
                         _uiState.value = DetailUiState(
                             isLoading = false,
-                            error = "Failed to load movie details"
+                            error = null,
+                            errorRes = com.idlix.tv.R.string.error_movie_detail
                         )
                     }
                 }
             } catch (e: Exception) {
+                val fallbackRes = if (contentType == "tv_series" || contentType == "series") {
+                    com.idlix.tv.R.string.error_series_detail
+                } else {
+                    com.idlix.tv.R.string.error_movie_detail
+                }
                 _uiState.value = DetailUiState(
                     isLoading = false,
-                    error = e.localizedMessage ?: "Network error loading details"
+                    error = e.localizedMessage,
+                    errorRes = fallbackRes
                 )
             }
         }

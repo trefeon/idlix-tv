@@ -1,8 +1,9 @@
 package com.idlix.tv.ui.screens.player
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.media3.exoplayer.ExoPlayer
-
+import com.idlix.tv.R
 /**
  * Player-local playback-quality state.
  *
@@ -17,18 +18,17 @@ import androidx.media3.exoplayer.ExoPlayer
  */
 enum class TvPlaybackQuality(
     val prefsValue: String,
-    val title: String,
-    val detail: String,
+    @StringRes val titleRes: Int,
+    @StringRes val detailRes: Int,
     val maxWidth: Int,
     val maxHeight: Int,
     /** Null = no bitrate cap (reset to unlimited when applied). */
     val maxBitrate: Int?,
 ) {
-    AUTO("auto", "Auto", "Recommended · Best available", 0, 0, null),
-    P1080("1080p", "1080p", "Full HD · Up to 1920×1080", 1920, 1080, null),
-    P720("720p", "720p", "HD · Up to 1280×720 · ≤3 Mbps", 1280, 720, 3_000_000),
-    P480("480p", "480p", "Data saver · Up to 854×480 · ≤1.2 Mbps", 854, 480, 1_200_000);
-
+    AUTO("auto", R.string.quality_auto_title, R.string.quality_detail_auto, 0, 0, null),
+    P1080("1080p", R.string.quality_1080_title, R.string.quality_detail_1080, 1920, 1080, null),
+    P720("720p", R.string.quality_720_title, R.string.quality_detail_720, 1280, 720, 3_000_000),
+    P480("480p", R.string.quality_480_title, R.string.quality_detail_480, 854, 480, 1_200_000);
     companion object {
         fun fromPrefsValue(value: String?): TvPlaybackQuality =
             entries.firstOrNull { it.prefsValue == value } ?: AUTO
@@ -137,4 +137,90 @@ fun applyVideoZoom(
     playerView.resizeMode =
         if (zoom) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+}
+
+/**
+ * Player-local playback-speed state (P0 speed picker).
+ *
+ * Same pattern as quality: persisted in `idlix_tv_prefs`, applied live via
+ * `ExoPlayer.setPlaybackSpeed` (no rebuild, no rebuffer), default 1x.
+ */
+enum class TvPlaybackSpeed(
+    val prefsValue: String,
+    val label: String,
+    val factor: Float,
+) {
+    P050("0.5x", "0.5×", 0.5f),
+    P075("0.75x", "0.75×", 0.75f),
+    P100("1x", "1×", 1.0f),
+    P125("1.25x", "1.25×", 1.25f),
+    P150("1.5x", "1.5×", 1.5f),
+    P200("2x", "2×", 2.0f);
+
+    companion object {
+        fun fromPrefsValue(value: String?): TvPlaybackSpeed =
+            entries.firstOrNull { it.prefsValue == value } ?: P100
+    }
+}
+
+private const val KEY_PLAYBACK_SPEED = "playback_speed"
+private const val KEY_AUDIO_LANGUAGE = "preferred_audio_language"
+
+fun loadPlaybackSpeed(context: Context): TvPlaybackSpeed {
+    return try {
+        val raw = context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .getString(KEY_PLAYBACK_SPEED, null)
+        TvPlaybackSpeed.fromPrefsValue(raw)
+    } catch (_: Exception) {
+        TvPlaybackSpeed.P100
+    }
+}
+
+fun savePlaybackSpeed(context: Context, speed: TvPlaybackSpeed) {
+    try {
+        context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_PLAYBACK_SPEED, speed.prefsValue)
+            .apply()
+    } catch (_: Exception) {
+    }
+}
+
+fun applyPlaybackSpeed(player: ExoPlayer, speed: TvPlaybackSpeed) {
+    try {
+        player.setPlaybackSpeed(speed.factor)
+    } catch (_: Exception) {
+    }
+}
+
+/**
+ * Preferred audio-track language (ISO-639, e.g. "id"), selected from the live
+ * `Tracks` audio groups in the subtitle modal. Null = no override (default
+ * track). Applied live via `setPreferredAudioLanguage`, no rebuild.
+ */
+fun loadAudioLanguage(context: Context): String? {
+    return try {
+        context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .getString(KEY_AUDIO_LANGUAGE, null)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+fun saveAudioLanguage(context: Context, language: String?) {
+    try {
+        val edit = context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .edit()
+        if (language == null) {
+            edit.remove(KEY_AUDIO_LANGUAGE)
+        } else {
+            edit.putString(KEY_AUDIO_LANGUAGE, language)
+        }
+        edit.apply()
+    } catch (_: Exception) {
+    }
 }

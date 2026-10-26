@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,9 +98,13 @@ fun TvPlayerControls(
     qualityLabel: String = "Auto",
     onOpenQualityPicker: () -> Unit = {},
     qualityButtonModifier: Modifier = Modifier,
+    speedLabel: String = "1×",
+    onOpenSpeedPicker: () -> Unit = {},
+    speedButtonModifier: Modifier = Modifier,
 ) {
     val subtitleFocusRequester = remember { FocusRequester() }
     val qualityFocusRequester = remember { FocusRequester() }
+    val speedFocusRequester = remember { FocusRequester() }
     val internalPlayFocusRequester = remember { FocusRequester() }
     val seekBarFocusRequester = remember { FocusRequester() }
 
@@ -288,7 +293,7 @@ fun TvPlayerControls(
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            contentDescription = if (isPlaying) stringResource(R.string.pause) else stringResource(R.string.play),
                             modifier = Modifier
                                 .size(36.dp)
                                 .then(if (!isPlaying) Modifier.offset(x = 2.dp) else Modifier)
@@ -353,7 +358,7 @@ fun TvPlayerControls(
                         .focusRequester(seekBarFocusRequester)
                         .focusProperties {
                             up = internalPlayFocusRequester
-                            down = qualityFocusRequester
+                            down = speedFocusRequester
                         }
                         .onFocusChanged { state ->
                             val wasFocused = isSeekFocused
@@ -572,6 +577,50 @@ fun TvPlayerControls(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // Speed Picker Button
+                        Button(
+                            onClick = {
+                                onOpenSpeedPicker()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixDarkCard,
+                                contentColor = NetflixWhite,
+                                focusedContainerColor = NetflixWhite,
+                                focusedContentColor = Color.Black
+                            ),
+                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .focusRequester(speedFocusRequester)
+                                .then(speedButtonModifier)
+                                .focusProperties {
+                                    up = seekBarFocusRequester
+                                    right = qualityFocusRequester
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = stringResource(R.string.playback_speed),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = speedLabel,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         // Quality Picker Button
                         Button(
                             onClick = {
@@ -595,6 +644,7 @@ fun TvPlayerControls(
                                 .then(qualityButtonModifier)
                                 .focusProperties {
                                     up = seekBarFocusRequester
+                                    left = speedFocusRequester
                                     right = subtitleFocusRequester
                                 }
                         ) {
@@ -604,7 +654,7 @@ fun TvPlayerControls(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.HighQuality,
-                                    contentDescription = "Quality",
+                                    contentDescription = stringResource(R.string.quality_label),
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -657,7 +707,7 @@ fun TvPlayerControls(
                                     selectedSubtitleLabel ?: stringResource(R.string.subtitle_on)
                                 }
                                 Text(
-                                    text = "Sub: $displayLabel",
+                                    text = stringResource(R.string.subtitle_label_format, displayLabel),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )

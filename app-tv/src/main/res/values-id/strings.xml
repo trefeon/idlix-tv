@@ -127,4 +127,59 @@
     <string name="play_next_episode">Putar Sekarang</string>
     <string name="next_episode_in_seconds">Putar otomatis dalam %ds</string>
     <string name="dismiss">Tutup</string>
+    <string name="error_home_load">Gagal memuat rekomendasi. Periksa koneksi internet.</string>
+    <string name="error_movies_load">Gagal memuat film. Periksa koneksi internet.</string>
+    <string name="error_series_load">Gagal memuat serial TV. Periksa koneksi internet.</string>
+    <string name="error_movie_detail">Gagal memuat detail film. Periksa koneksi internet.</string>
+    <string name="error_series_detail">Gagal memuat detail serial. Periksa koneksi internet.</string>
+    <string name="search_error">Pencarian gagal. Periksa koneksi.</string>
+    <string name="resume_play">Lanjutkan</string>
+    <string name="movie_duration_format">%d mnt</string>
+    <string name="series_counts_format">%1$d Musim · %2$d Episode</string>
+    <string name="match_score_format">%1$d%% Cocok</string>
+    <string name="kicker_film">F I L M</string>
+    <string name="kicker_series">S E R I A L</string>
+    <string name="quality_title">Kualitas Video</string>
+    <string name="quality_recommended">(Disarankan)</string>
+    <string name="quality_badge_auto">AUTO</string>
+    <string name="picture_size">Ukuran gambar</string>
+    <string name="aspect_fit">Fit</string>
+    <string name="aspect_fit_desc">Seluruh gambar · tanpa terpotong</string>
+    <string name="aspect_badge_fit">FIT</string>
+    <string name="aspect_zoom">Zoom</string>
+    <string name="aspect_zoom_desc">Layar penuh · tepi panjang terpotong</string>
+    <string name="aspect_badge_zoom">ZOOM</string>
+    <string name="quality_note">Berlaku langsung — pemutaran tidak berhenti.</string>
+    <string name="quality_auto_title">Otomatis</string>
+    <string name="quality_detail_auto">Disarankan · Kualitas terbaik</string>
+    <string name="quality_detail_1080">Full HD · Hingga 1920×1080</string>
+    <string name="quality_detail_720">HD · Hingga 1280×720 · ≤3 Mbps</string>
+    <string name="quality_detail_480">Hemat data · Hingga 854×480 · ≤1,2 Mbps</string>
+    <string name="pause">Jeda</string>
+    <string name="quality_label">Kualitas</string>
+    <string name="rating_desc">Peringkat</string>
+    <string name="quality_1080_title">1080p</string>
+    <string name="quality_720_title">720p</string>
+    <string name="quality_480_title">480p</string>
+    <string name="clear">Hapus</string>
+    <string name="content_badge_series">SERIAL</string>
+    <string name="content_badge_movie">FILM</string>
+    <string name="selected">Dipilih</string>
+    <string name="next_episode_title_format">S%1$d:E%2$d - %3$s</string>
+    <string name="episode_title_format">%1$d. %2$s</string>
+    <string name="subdl_author_by">oleh %1$s</string>
+    <string name="subtitle_label_format">Sub: %1$s</string>
+    <string name="playback_speed">Kecepatan</string>
+    <string name="speed_title">Kecepatan Putar</string>
+    <string name="speed_badge_normal">NORMAL</string>
+    <string-array name="quick_searches">
+        <item>Batman</item>
+        <item>Spider-Man</item>
+        <item>Action</item>
+        <item>Korea</item>
+        <item>Horror</item>
+        <item>Comedy</item>
+        <item>Anime</item>
+        <item>Romance</item>
+    </string-array>
 </resources>

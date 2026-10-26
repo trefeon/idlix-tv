@@ -190,7 +190,8 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
             slug = slug,
             onNavigateToPlayer = { type, id, title, poster, backdrop, slugParam, season, episode ->
                 navController.navigate(Screen.Player.createRoute(type, id, title, poster, backdrop, slugParam, season, episode))
-            }
+            },
+            onBack = { navController.popBackStack() }
         )
     }
 

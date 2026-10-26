@@ -54,6 +54,15 @@ import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
 
+/**
+ * One audio rendition from the live `Tracks` groups (language + display label).
+ * Language codes ("id", "en") are locale-neutral wire values, not UI copy.
+ */
+data class TvAudioOption(
+    val language: String,
+    val label: String
+)
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TvSubtitlePickerModal(
@@ -67,7 +76,10 @@ fun TvSubtitlePickerModal(
     onSelectSubdl: (SubdlSubtitle) -> Unit,
     onSearchSubdlClick: () -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    availableAudioTracks: List<TvAudioOption> = emptyList(),
+    selectedAudioLanguage: String? = null,
+    onSelectAudio: (String) -> Unit = {},
 ) {
     if (!isVisible) return
 
@@ -112,7 +124,11 @@ fun TvSubtitlePickerModal(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = stringResource(R.string.audio_and_subtitles),
+                        text = if (availableAudioTracks.isNotEmpty()) {
+                            stringResource(R.string.audio_and_subtitles)
+                        } else {
+                            stringResource(R.string.subtitles)
+                        },
                         color = NetflixWhite,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -131,6 +147,31 @@ fun TvSubtitlePickerModal(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
+                // 0. Audio tracks (only when the live Tracks expose audio groups;
+                // otherwise the header already falls back to subtitles-only).
+                if (availableAudioTracks.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.audio),
+                            color = NetflixLightGray,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
+                        )
+                    }
+
+                    items(availableAudioTracks, key = { it.language }) { audio ->
+                        val isSelected = audio.language == selectedAudioLanguage
+                        SubtitleOptionCard(
+                            title = audio.label.ifBlank { audio.language },
+                            subtitle = null,
+                            badge = audio.language.uppercase(),
+                            isSelected = isSelected,
+                            onClick = { onSelectAudio(audio.language) }
+                        )
+                    }
+                }
+
                 // 1. Turn Off Subtitles
                 item {
                     val isOffSelected = !isSubtitleEnabled || selectedSubtitle == null
@@ -230,7 +271,7 @@ fun TvSubtitlePickerModal(
                     items(subdlSubtitles) { sub ->
                         val isIndo = sub.language.equals("ID", ignoreCase = true) || sub.lang.equals("indonesian", ignoreCase = true)
                         val badgeText = if (isIndo) "ID" else (sub.language ?: "EN")
-                        val authorText = sub.author?.let { "by $it" } ?: ""
+                        val authorText = sub.author?.let { stringResource(R.string.subdl_author_by, it) } ?: ""
                         val releaseText = sub.releaseName ?: sub.name ?: ""
 
                         SubtitleOptionCard(
@@ -339,7 +380,7 @@ private fun SubtitleOptionCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "Selected",
+                        contentDescription = stringResource(R.string.selected),
                         tint = NetflixWhite,
                         modifier = Modifier.size(14.dp)
                     )

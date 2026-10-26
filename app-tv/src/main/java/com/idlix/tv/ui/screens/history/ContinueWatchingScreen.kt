@@ -24,6 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -57,7 +60,7 @@ fun ContinueWatchingScreen(
     viewModel: ContinueWatchingViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-
+    var showClearConfirm by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         viewModel.loadHistory()
     }
@@ -94,9 +97,9 @@ fun ContinueWatchingScreen(
                     )
                 }
 
-                if (uiState.items.isNotEmpty()) {
+                if (uiState.items.isNotEmpty() && !showClearConfirm) {
                     Button(
-                        onClick = { viewModel.clearAll() },
+                        onClick = { showClearConfirm = true },
                         colors = ButtonDefaults.colors(
                             containerColor = NetflixDarkCard,
                             contentColor = NetflixLightGray,
@@ -117,6 +120,61 @@ fun ContinueWatchingScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(text = stringResource(R.string.clear_all), fontSize = 14.sp)
+                    }
+                } else if (uiState.items.isNotEmpty()) {
+                    // Confirm row mirroring Settings → Clear watch history.
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = stringResource(R.string.settings_history_confirm_title),
+                            color = NetflixWhite,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_history_confirm_desc),
+                            color = NetflixLightGray,
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = { showClearConfirm = false },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = NetflixDarkCard,
+                                    contentColor = NetflixWhite,
+                                    focusedContainerColor = NetflixWhite,
+                                    focusedContentColor = NetflixLightGray
+                                ),
+                                border = ButtonDefaults.border(
+                                    focusedBorder = Border(
+                                        border = BorderStroke(2.dp, NetflixWhite)
+                                    )
+                                ),
+                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
+                            ) {
+                                Text(text = stringResource(R.string.settings_history_no), fontSize = 14.sp)
+                            }
+                            Button(
+                                onClick = {
+                                    showClearConfirm = false
+                                    viewModel.clearAll()
+                                },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = NetflixRed,
+                                    contentColor = NetflixWhite,
+                                    focusedContainerColor = NetflixRed,
+                                    focusedContentColor = NetflixWhite
+                                ),
+                                border = ButtonDefaults.border(
+                                    focusedBorder = Border(
+                                        border = BorderStroke(2.dp, NetflixWhite)
+                                    )
+                                ),
+                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
+                            ) {
+                                Text(text = stringResource(R.string.settings_history_yes), fontSize = 14.sp)
+                            }
+                        }
                     }
                 }
             }

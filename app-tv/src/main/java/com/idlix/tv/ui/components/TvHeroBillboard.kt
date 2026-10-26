@@ -150,7 +150,11 @@ fun TvHeroBillboard(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isSeries) "S E R I E S" else "F I L M",
+                    text = if (isSeries) {
+                        stringResource(R.string.kicker_series)
+                    } else {
+                        stringResource(R.string.kicker_film)
+                    },
                     color = NetflixLightGray,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
@@ -178,7 +182,7 @@ fun TvHeroBillboard(
             ) {
                 if (matchPercent != null) {
                     Text(
-                        text = "$matchPercent% Match",
+                        text = stringResource(R.string.match_score_format, matchPercent),
                         color = MatchGreen,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold

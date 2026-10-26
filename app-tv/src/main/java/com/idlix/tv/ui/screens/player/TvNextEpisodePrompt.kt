@@ -131,7 +131,12 @@ fun TvNextEpisodePrompt(
 
                 // Series & Episode Details
                 Text(
-                    text = "S${nextEpisode.seasonNumber}:E${nextEpisode.episode.episodeNumber} - ${nextEpisode.episode.name}",
+                    text = stringResource(
+                        R.string.next_episode_title_format,
+                        nextEpisode.seasonNumber,
+                        nextEpisode.episode.episodeNumber,
+                        nextEpisode.episode.name
+                    ),
                     color = NetflixWhite,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
@@ -172,8 +177,10 @@ fun TvNextEpisodePrompt(
                                             true
                                         } else false
                                     }
+                                    // Up/Down pass through to the controls below (focus can
+                                    // leave the prompt); only Left/Right stay internal.
                                     KeyEvent.KEYCODE_DPAD_UP,
-                                    KeyEvent.KEYCODE_DPAD_DOWN -> true
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> false
                                     else -> false
                                 }
                             } else false

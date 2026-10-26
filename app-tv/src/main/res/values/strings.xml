@@ -127,4 +127,59 @@
     <string name="play_next_episode">Play Next</string>
     <string name="next_episode_in_seconds">Auto-playing in %ds</string>
     <string name="dismiss">Dismiss</string>
+    <string name="error_home_load">Couldn\'t load recommendations. Check your internet connection.</string>
+    <string name="error_movies_load">Couldn\'t load movies. Check your internet connection.</string>
+    <string name="error_series_load">Couldn\'t load TV series. Check your internet connection.</string>
+    <string name="error_movie_detail">Couldn\'t load movie details. Check your internet connection.</string>
+    <string name="error_series_detail">Couldn\'t load series details. Check your internet connection.</string>
+    <string name="search_error">Search failed. Check your connection.</string>
+    <string name="resume_play">Resume</string>
+    <string name="movie_duration_format">%d min</string>
+    <string name="series_counts_format">%1$d Seasons · %2$d Episodes</string>
+    <string name="match_score_format">%1$d%% Match</string>
+    <string name="kicker_film">F I L M</string>
+    <string name="kicker_series">S E R I E S</string>
+    <string name="quality_title">Video Quality</string>
+    <string name="quality_recommended">(Recommended)</string>
+    <string name="quality_badge_auto">AUTO</string>
+    <string name="picture_size">Picture size</string>
+    <string name="aspect_fit">Fit</string>
+    <string name="aspect_fit_desc">Entire picture · never cropped</string>
+    <string name="aspect_badge_fit">FIT</string>
+    <string name="aspect_zoom">Zoom</string>
+    <string name="aspect_zoom_desc">Fill screen · crops the long edges</string>
+    <string name="aspect_badge_zoom">ZOOM</string>
+    <string name="quality_note">Applies instantly — playback keeps playing.</string>
+    <string name="quality_auto_title">Auto</string>
+    <string name="quality_detail_auto">Recommended · Best available</string>
+    <string name="quality_detail_1080">Full HD · Up to 1920×1080</string>
+    <string name="quality_detail_720">HD · Up to 1280×720 · ≤3 Mbps</string>
+    <string name="quality_detail_480">Data saver · Up to 854×480 · ≤1.2 Mbps</string>
+    <string name="pause">Pause</string>
+    <string name="quality_label">Quality</string>
+    <string name="rating_desc">Rating</string>
+    <string name="quality_1080_title">1080p</string>
+    <string name="quality_720_title">720p</string>
+    <string name="quality_480_title">480p</string>
+    <string name="clear">Clear</string>
+    <string name="content_badge_series">SERIES</string>
+    <string name="content_badge_movie">MOVIE</string>
+    <string name="selected">Selected</string>
+    <string name="next_episode_title_format">S%1$d:E%2$d - %3$s</string>
+    <string name="episode_title_format">%1$d. %2$s</string>
+    <string name="subdl_author_by">by %1$s</string>
+    <string name="subtitle_label_format">Sub: %1$s</string>
+    <string name="playback_speed">Speed</string>
+    <string name="speed_title">Playback Speed</string>
+    <string name="speed_badge_normal">NORMAL</string>
+    <string-array name="quick_searches">
+        <item>Batman</item>
+        <item>Spider-Man</item>
+        <item>Action</item>
+        <item>Korea</item>
+        <item>Horror</item>
+        <item>Comedy</item>
+        <item>Anime</item>
+        <item>Romance</item>
+    </string-array>
 </resources>

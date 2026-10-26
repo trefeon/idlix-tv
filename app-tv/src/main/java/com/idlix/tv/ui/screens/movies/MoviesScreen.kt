@@ -3,24 +3,24 @@ package com.idlix.tv.ui.screens.movies
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.tv.foundation.lazy.list.TvLazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.tv.material3.Text
 import com.idlix.tv.R
+import com.idlix.tv.ui.components.TvErrorState
 import com.idlix.tv.ui.components.TvHeroBillboard
 import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.components.TvSwimlaneRow
 import com.idlix.tv.ui.theme.NetflixBlack
-import com.idlix.tv.ui.theme.NetflixWhite
 
 @Composable
 fun MoviesScreen(
@@ -30,6 +30,16 @@ fun MoviesScreen(
     viewModel: MoviesViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val heroFocusRequester = remember { FocusRequester() }
+
+    // Direct initial focus to Hero billboard content as soon as loaded
+    LaunchedEffect(uiState.isLoading, uiState.heroMovie) {
+        if (!uiState.isLoading && uiState.heroMovie != null) {
+            try {
+                heroFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
 
     Box(
         modifier = modifier
@@ -40,23 +50,23 @@ fun MoviesScreen(
             TvLoadingSpinner(
                 modifier = Modifier.align(Alignment.Center)
             )
-        } else if (uiState.error != null) {
-            Text(
-                text = uiState.error ?: "",
-                color = NetflixWhite,
-                fontSize = 16.sp,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp)
+        } else if (uiState.error != null || uiState.errorRes != null) {
+            val errorMessage = uiState.error
+                ?: uiState.errorRes?.let { stringResource(it) }.orEmpty()
+            TvErrorState(
+                message = errorMessage,
+                onRetry = { viewModel.loadMoviesData() },
+                modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            LazyColumn(
+            TvLazyColumn(
                 modifier = Modifier.fillMaxSize()
             ) {
                 // Hero Movie Billboard
                 item {
                     TvHeroBillboard(
                         movie = uiState.heroMovie,
+                        playButtonModifier = Modifier.focusRequester(heroFocusRequester),
                         onPlayClick = {
                             uiState.heroMovie?.let {
                                 onNavigateToPlayer(it.contentType, it.id, it.title, it.fullPosterUrl, it.fullBackdropUrl, it.slug)

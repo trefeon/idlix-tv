@@ -21,7 +21,8 @@ data class HomeUiState(
     val popularMovies: List<MovieItem> = emptyList(),
     val popularSeries: List<SeriesItem> = emptyList(),
     val actionMovies: List<MovieItem> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val errorRes: Int? = null
 )
 
 class HomeViewModel(
@@ -47,7 +48,7 @@ class HomeViewModel(
 
     fun loadHomeData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, errorRes = null)
             try {
                 var trending = repository.getTrendingMovies()
                 var popular = repository.getPopularMovies()
@@ -60,14 +61,15 @@ class HomeViewModel(
                     popular = repository.getPopularMovies()
                     series = repository.getPopularSeries()
                 }
-
                 if (trending.isEmpty() && popular.isEmpty() && series.isEmpty()) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "Gagal memuat rekomendasi film & serial. Silakan periksa koneksi internet."
+                        error = null,
+                        errorRes = com.idlix.tv.R.string.error_home_load
                     )
                     return@launch
                 }
+
 
                 val action = repository.getMoviesByGenre("action")
 
@@ -78,12 +80,14 @@ class HomeViewModel(
                     popularMovies = popular,
                     popularSeries = series,
                     actionMovies = action,
-                    error = null
+                    error = null,
+                    errorRes = null
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.localizedMessage ?: "Failed to load data"
+                    error = e.localizedMessage,
+                    errorRes = com.idlix.tv.R.string.error_home_load
                 )
             }
         }

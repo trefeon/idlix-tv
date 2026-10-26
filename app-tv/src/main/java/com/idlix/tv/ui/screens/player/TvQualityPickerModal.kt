@@ -29,8 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.idlix.tv.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.foundation.lazy.list.TvLazyColumn
@@ -115,7 +117,7 @@ fun TvQualityPickerModal(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Video Quality",
+                        text = stringResource(R.string.quality_title),
                         color = NetflixWhite,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -133,14 +135,20 @@ fun TvQualityPickerModal(
                 items(rows) { quality ->
                     val isSelected = quality == currentQuality
                     val title = if (quality == TvPlaybackQuality.AUTO) {
-                        "${quality.title} (Recommended)"
+                        val auto = stringResource(quality.titleRes)
+                        val recommended = stringResource(R.string.quality_recommended)
+                        "$auto $recommended"
                     } else {
-                        quality.title
+                        stringResource(quality.titleRes)
                     }
                     QualityOptionCard(
                         title = title,
-                        subtitle = quality.detail,
-                        badge = if (quality == TvPlaybackQuality.AUTO) "AUTO" else quality.title,
+                        subtitle = stringResource(quality.detailRes),
+                        badge = if (quality == TvPlaybackQuality.AUTO) {
+                            stringResource(R.string.quality_badge_auto)
+                        } else {
+                            stringResource(quality.titleRes)
+                        },
                         isSelected = isSelected,
                         onClick = { onSelectQuality(quality) },
                         modifier = if (quality == rows.first()) {
@@ -153,7 +161,7 @@ fun TvQualityPickerModal(
 
                 item {
                     Text(
-                        text = "Picture size",
+                        text = stringResource(R.string.picture_size),
                         color = NetflixWhite,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
@@ -162,18 +170,18 @@ fun TvQualityPickerModal(
                 }
                 item {
                     QualityOptionCard(
-                        title = "Fit",
-                        subtitle = "Entire picture · never cropped",
-                        badge = "FIT",
+                        title = stringResource(R.string.aspect_fit),
+                        subtitle = stringResource(R.string.aspect_fit_desc),
+                        badge = stringResource(R.string.aspect_badge_fit),
                         isSelected = !isZoom,
                         onClick = { onSelectAspect(false) },
                     )
                 }
                 item {
                     QualityOptionCard(
-                        title = "Zoom",
-                        subtitle = "Fill screen · crops the long edges",
-                        badge = "ZOOM",
+                        title = stringResource(R.string.aspect_zoom),
+                        subtitle = stringResource(R.string.aspect_zoom_desc),
+                        badge = stringResource(R.string.aspect_badge_zoom),
                         isSelected = isZoom,
                         onClick = { onSelectAspect(true) },
                     )
@@ -181,7 +189,7 @@ fun TvQualityPickerModal(
 
                 item {
                     Text(
-                        text = "Applies instantly — playback keeps playing.",
+                        text = stringResource(R.string.quality_note),
                         color = NetflixLightGray,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
@@ -284,7 +292,7 @@ private fun QualityOptionCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "Selected",
+                                    contentDescription = stringResource(R.string.selected),
                         tint = NetflixWhite,
                         modifier = Modifier.size(14.dp)
                     )

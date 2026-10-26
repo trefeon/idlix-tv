@@ -3,6 +3,7 @@ package com.idlix.tv.ui.screens.search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +41,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +58,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
+import androidx.tv.material3.Border
 import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvLoadingSpinner
@@ -80,12 +83,16 @@ fun SearchScreen(
     val clearButtonFocusRequester = remember { FocusRequester() }
     val firstTagFocusRequester = remember { FocusRequester() }
     val firstResultFocusRequester = remember { FocusRequester() }
+    val errorRetryFocusRequester = remember { FocusRequester() }
 
     var isInputFocused by remember { mutableStateOf(false) }
     var isClearFocused by remember { mutableStateOf(false) }
     var pendingFocusOnResults by remember { mutableStateOf(false) }
 
-    val quickSearches = listOf("Batman", "Spider-Man", "Action", "Korea", "Horror", "Comedy", "Anime", "Romance")
+    val context = LocalContext.current
+    val quickSearches = remember(context) {
+        context.resources.getStringArray(R.array.quick_searches).toList()
+    }
 
     // Request initial focus on the search input bar when screen is first displayed
     LaunchedEffect(Unit) {
@@ -108,6 +115,14 @@ fun SearchScreen(
                     searchFieldFocusRequester.requestFocus()
                 } catch (_: Exception) {}
             }
+        }
+    }
+    // Land on Retry as soon as a search failure renders, so D-pad is never stranded.
+    LaunchedEffect(uiState.error, uiState.errorRes) {
+        if (uiState.error != null || uiState.errorRes != null) {
+            try {
+                errorRetryFocusRequester.requestFocus()
+            } catch (_: Exception) {}
         }
     }
 
@@ -134,7 +149,7 @@ fun SearchScreen(
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
-                contentDescription = "Search",
+                contentDescription = stringResource(R.string.search),
                 tint = if (isBarFocused) NetflixWhite else NetflixLightGray
             )
 
@@ -284,7 +299,7 @@ fun SearchScreen(
                             }
                         }
                 ) {
-                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
+                    Icon(imageVector = Icons.Default.Clear, contentDescription = stringResource(R.string.clear))
                 }
             }
         }
@@ -368,6 +383,41 @@ fun SearchScreen(
                 TvLoadingSpinner(
                     modifier = Modifier.align(Alignment.Center)
                 )
+            } else if (uiState.error != null || uiState.errorRes != null) {
+                val errorMessage = uiState.error
+                    ?: uiState.errorRes?.let { stringResource(it) }.orEmpty()
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = errorMessage,
+                        color = NetflixWhite,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { viewModel.onQueryChange(uiState.query) },
+                        colors = ButtonDefaults.colors(
+                            containerColor = NetflixRed,
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixRed,
+                            focusedContentColor = NetflixWhite
+                        ),
+                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                        border = ButtonDefaults.border(
+                            focusedBorder = Border(
+                                border = BorderStroke(2.dp, NetflixWhite)
+                            )
+                        ),
+                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                        modifier = Modifier.focusRequester(errorRetryFocusRequester)
+                    ) {
+                        Text(text = stringResource(R.string.try_again), fontSize = 14.sp)
+                    }
+                }
             } else if (uiState.results.isEmpty() && uiState.query.isNotBlank()) {
                 Text(
                     text = stringResource(R.string.no_results_for, uiState.query),
@@ -375,7 +425,8 @@ fun SearchScreen(
                     fontSize = 14.sp,
                     modifier = Modifier.align(Alignment.Center)
                 )
-            } else if (uiState.results.isEmpty()) {
+            }
+            else if (uiState.results.isEmpty()) {
                 Text(
                     text = stringResource(R.string.search_hint),
                     color = NetflixLightGray,
@@ -400,7 +451,11 @@ fun SearchScreen(
                             title = item.title,
                             posterUrl = item.fullPosterUrl,
                             rating = item.formattedRating,
-                            quality = item.quality ?: if (item.contentType == "tv_series") "SERIES" else "MOVIE",
+                            quality = item.quality ?: if (item.contentType == "tv_series") {
+                                stringResource(R.string.content_badge_series)
+                            } else {
+                                stringResource(R.string.content_badge_movie)
+                            },
                             onClick = { onNavigateToDetail(item.contentType, item.slug) },
                             modifier = Modifier
                                 .then(if (isFirst) Modifier.focusRequester(firstResultFocusRequester) else Modifier)
