@@ -1,8 +1,8 @@
 # 📺 Installing IDLIX on Android TV & Google TV (For Non-Technical Users)
 
-This guide is for anyone who wants to install the IDLIX app on a Smart TV, Android TV Box, or Google TV — no technical skills, laptop, or coding required.
+> Part of [IDLIX for Android TV](./README.md). Developers: see the main README's build guide instead.
 
----
+This guide is for anyone who wants to install the IDLIX app on a Smart TV, Android TV Box, or Google TV — no technical skills, laptop, or coding required. To update an already-installed app, see [Updating](#-updating-the-app) at the bottom.
 
 ## 📋 Requirements
 
@@ -101,3 +101,11 @@ There are 3 easy methods — pick whichever fits your TV:
 ### 3. Subtitles missing, or want to change the language?
 * While a video is playing, press the **Up/Down** buttons on the TV remote to bring up the player controls.
 * Select the **Subtitle (CC) icon** to pick a built-in IDLIX subtitle or search for alternatives via the SubDL integration.
+
+---
+
+## 🔄 Updating the app
+
+The app checks for new versions automatically once a day. When an update is available, open **Settings** in the app and follow the update prompt — it downloads and installs without a computer.
+
+> ⚠️ **Coming from v1.0.0?** Uninstall the old app first (v1.0.0 was unsigned; the signed v1.0.1+ cannot install over it). Your local watch history will be cleared. All later versions update in place.
