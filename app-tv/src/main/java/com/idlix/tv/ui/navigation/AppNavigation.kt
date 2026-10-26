@@ -1,8 +1,10 @@
 package com.idlix.tv.ui.navigation
 
+import android.view.KeyEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -41,12 +43,25 @@ fun AppNavigation(
 
     val isFullScreenRoute = currentRoute.startsWith("player") || currentRoute.startsWith("detail")
 
+    // consumes BUTTON_B itself, so this bubbling handler only fires on routes
+    // where Back currently does nothing for gamepads. Remote paths untouched.
+    val gamepadBackHandler = Modifier.onKeyEvent { keyEvent ->
+        if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+            keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_B
+        ) {
+            if (navController.previousBackStackEntry != null) {
+                navController.popBackStack()
+                true
+            } else false
+        } else false
+    }
+
     if (isFullScreenRoute) {
         // Render without side drawer
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
-            modifier = modifier
+            modifier = modifier.then(gamepadBackHandler)
         ) {
             setupNavRoutes(navController)
         }
@@ -87,7 +102,7 @@ fun AppNavigation(
                     }
                 }
             },
-            modifier = modifier
+            modifier = modifier.then(gamepadBackHandler)
         ) {
             NavHost(
                 navController = navController,

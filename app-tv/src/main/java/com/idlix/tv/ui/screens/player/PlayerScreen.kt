@@ -63,6 +63,8 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.idlix.tv.ui.components.TvLoadingSpinner
+import com.idlix.tv.ui.input.GamepadKeys
+import com.idlix.tv.ui.input.GamepadKeys.PlayerActions
 import com.idlix.data.net.IdlixDomainResolver
 import com.idlix.tv.R
 import com.idlix.tv.ui.theme.NetflixBlack
@@ -220,7 +222,80 @@ fun PlayerScreen(
             .focusable()
             .onKeyEvent { keyEvent ->
                 if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                    when (keyEvent.nativeKeyEvent.keyCode) {
+                    val rawCode = keyEvent.nativeKeyEvent.keyCode
+                    // Gamepad extras first; unknown codes fall through to the
+                    // existing remote/media branches below (remote paths untouched).
+                    val gamepadConsumed = GamepadKeys.onGamepadKey(
+                        rawCode,
+                        true,
+                        PlayerActions(
+                            onConfirm = {
+                                if (isNextPromptVisible) {
+                                    false
+                                } else if (!showControls) {
+                                    showControls = true
+                                    true
+                                } else false
+                            },
+                            onTogglePlayPause = {
+                                val p = activePlayer
+                                if (p == null || isNextPromptVisible) {
+                                    false
+                                } else {
+                                    if (p.isPlaying) p.pause() else p.play()
+                                    showControls = true
+                                    true
+                                }
+                            },
+                            onSeekForward = {
+                                val p = activePlayer
+                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible) {
+                                    false
+                                } else {
+                                    p.seekTo((p.currentPosition + 10000L).coerceAtMost(p.duration))
+                                    showControls = true
+                                    true
+                                }
+                            },
+                            onSeekBackward = {
+                                val p = activePlayer
+                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible) {
+                                    false
+                                } else {
+                                    p.seekTo((p.currentPosition - 10000L).coerceAtLeast(0L))
+                                    showControls = true
+                                    true
+                                }
+                            },
+                            onOpenSubtitlePicker = {
+                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible ||
+                                    uiState.resolvedStream == null
+                                ) {
+                                    false
+                                } else {
+                                    viewModel.openSubtitlePicker()
+                                    userInteractionCount++
+                                    true
+                                }
+                            },
+                            onToggleControls = {
+                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible) {
+                                    false
+                                } else {
+                                    showControls = !showControls
+                                    userInteractionCount++
+                                    true
+                                }
+                            }
+                        )
+                    )
+                    if (gamepadConsumed) {
+                        true
+                    } else when (
+                        // Gamepad B mirrors system Back through the exact branch below.
+                        if (rawCode == KeyEvent.KEYCODE_BUTTON_B) KeyEvent.KEYCODE_BACK
+                        else rawCode
+                    ) {
                         KeyEvent.KEYCODE_BACK -> {
                             if (uiState.isSubtitlePickerVisible) {
                                 viewModel.closeSubtitlePicker()
