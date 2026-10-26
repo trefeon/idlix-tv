@@ -69,7 +69,7 @@ class UpdateCheckerTest {
         )
         val method = checker!!.methods.firstOrNull { it.name == "checkForUpdate" }
         Assume.assumeTrue(
-            "Seam: UpdateChecker must expose checkForUpdate(currentVersionCode: Long).",
+            "Seam: UpdateChecker must expose checkForUpdate(context, currentVersionCode: Long).",
             method != null
         )
         assertTrue(method!!.parameterTypes.any { it == Long::class.javaPrimitiveType })

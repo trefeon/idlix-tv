@@ -10,6 +10,7 @@ import com.idlix.data.local.WatchHistoryStore
 import com.idlix.data.net.IdlixDomainResolver
 import com.idlix.data.repository.SubdlRepository
 import com.idlix.tv.BuildConfig
+import com.idlix.tv.R
 import com.idlix.tv.startup.ErrorLog
 import com.idlix.tv.update.UpdateChecker
 import com.idlix.tv.update.UpdateDownloader
@@ -37,7 +38,7 @@ import java.util.Locale
  * Update wiring follows the UpdateEngine contract
  * (`com.idlix.tv.update`: [UpdateState], [UpdateChecker], [UpdateDownloader],
  * [UpdateInstaller]). Check delegates to
- * `UpdateChecker.checkForUpdate(currentVersionCode)`, download collects
+ * `UpdateChecker.checkForUpdate(context, currentVersionCode)`, download collects
  * `UpdateDownloader.download(context, assetUrl)`, install routes through
  * `UpdateInstaller.installApk` (falling back to the unknown-sources settings
  * screen when installs from this source are blocked). No update channel
@@ -135,9 +136,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _updateState.value = UpdateState.Checking
             _updateState.value = try {
-                UpdateChecker.checkForUpdate(BuildConfig.VERSION_CODE.toLong())
+                UpdateChecker.checkForUpdate(app, BuildConfig.VERSION_CODE.toLong())
             } catch (e: Exception) {
-                UpdateState.Failed(e.localizedMessage ?: "Check failed")
+                UpdateState.Failed(app.getString(R.string.update_err_failed, e.localizedMessage?.take(120) ?: "—"))
             }
         }
     }
@@ -150,7 +151,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _updateState.value = state
                 }
             } catch (e: Exception) {
-                _updateState.value = UpdateState.Failed(e.localizedMessage ?: "Download failed")
+                _updateState.value = UpdateState.Failed(app.getString(R.string.dl_err_query, e.localizedMessage?.take(120) ?: "—"))
             }
         }
     }
@@ -164,7 +165,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
             UpdateInstaller.installApk(ctx, fileUri)
         } catch (e: Exception) {
-            _updateState.value = UpdateState.Failed(e.localizedMessage ?: "Install failed")
+            _updateState.value = UpdateState.Failed(app.getString(R.string.update_err_install, e.localizedMessage?.take(120) ?: "—"))
         }
     }
 

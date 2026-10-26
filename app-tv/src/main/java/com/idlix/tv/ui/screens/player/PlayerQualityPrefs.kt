@@ -26,6 +26,10 @@ enum class TvPlaybackQuality(
     val maxBitrate: Int?,
 ) {
     AUTO("auto", R.string.quality_auto_title, R.string.quality_detail_auto, 0, 0, null),
+    // Bitrate caps are deliberately TV-biased (kept, not synced with mobile):
+    // big screens on steady Wi-Fi want headroom, so 1080p is uncapped and the
+    // lower tiers sit higher (720p 3.0M / 480p 1.2M) than mobile's metered-cell
+    // caps (1080p 5M / 720p 2.5M / 480p 1M). See PlayerQualityPrefs on mobile.
     P1080("1080p", R.string.quality_1080_title, R.string.quality_detail_1080, 1920, 1080, null),
     P720("720p", R.string.quality_720_title, R.string.quality_detail_720, 1280, 720, 3_000_000),
     P480("480p", R.string.quality_480_title, R.string.quality_detail_480, 854, 480, 1_200_000);

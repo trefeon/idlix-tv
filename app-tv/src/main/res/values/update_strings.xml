@@ -13,4 +13,18 @@
     <string name="update_retry">Retry</string>
     <string name="update_channel_name">App updates</string>
     <string name="update_channel_desc">Notifications when a new IDLIX TV release is available</string>
+    <string name="update_err_http">Server error (HTTP %1$d)</string>
+    <string name="update_err_empty">Empty release response</string>
+    <string name="update_err_bad_data">Bad release data</string>
+    <string name="update_err_no_asset">No APK asset in this release</string>
+    <string name="update_err_network">Network error: %1$s</string>
+    <string name="update_err_failed">Check failed: %1$s</string>
+    <string name="update_err_install">Install failed: %1$s</string>
+    <string name="dl_err_unavailable">Downloads unavailable on this device</string>
+    <string name="dl_err_storage">Storage unavailable</string>
+    <string name="dl_err_enqueue">Could not start download: %1$s</string>
+    <string name="dl_err_query">Download query failed: %1$s</string>
+    <string name="dl_err_lost">Download lost</string>
+    <string name="dl_err_share">Could not share update file</string>
+    <string name="dl_err_failed">Download failed (%1$d)</string>
 </resources>

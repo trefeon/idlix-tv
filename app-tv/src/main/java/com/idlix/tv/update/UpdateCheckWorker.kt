@@ -23,8 +23,8 @@ import java.util.concurrent.TimeUnit
  * [UpdateState.Available]; every other state (up to date, offline, failed)
  * stays silent so the TV never nags.
  *
- * Requires `androidx.work:work-runtime-ktx` (see build-gap note in the
- * slice report). Schedule once from app startup via [schedule].
+ * Requires `androidx.work:work-runtime-ktx`. Schedule once from app startup
+ * via [schedule].
  */
 class UpdateCheckWorker(
     appContext: Context,
@@ -32,7 +32,7 @@ class UpdateCheckWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val state = UpdateChecker.checkForUpdate(BuildConfig.VERSION_CODE.toLong())
+        val state = UpdateChecker.checkForUpdate(applicationContext, BuildConfig.VERSION_CODE.toLong())
         if (state is UpdateState.Available) {
             showAvailableNotification(state)
         }
@@ -68,18 +68,31 @@ class UpdateCheckWorker(
                         android.app.PendingIntent.FLAG_IMMUTABLE
                 )
             }
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        // Content shows the release summary, not the generic channel blurb;
+        // the full notes ride along as BigText.
+        val summary = state.notes.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .take(3)
+            .joinToString(" ")
+            .take(200)
+            .ifBlank { context.getString(R.string.update_channel_desc) }
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle(
                 context.getString(R.string.update_available_title, state.version)
             )
-            .setContentText(context.getString(R.string.update_channel_desc))
+            .setContentText(summary)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setAutoCancel(true)
             .apply { if (launch != null) setContentIntent(launch) }
-            .build()
-        manager.notify(NOTIFICATION_ID, notification)
+        if (state.notes.isNotBlank()) {
+            builder.setStyle(
+                NotificationCompat.BigTextStyle().bigText(state.notes.take(1000))
+            )
+        }
+        manager.notify(NOTIFICATION_ID, builder.build())
     }
 
     companion object {

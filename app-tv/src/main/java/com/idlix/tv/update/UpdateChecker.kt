@@ -1,7 +1,9 @@
 package com.idlix.tv.update
 
+import android.content.Context
 import com.idlix.data.net.CoreHttp
 import com.idlix.tv.BuildConfig
+import com.idlix.tv.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -51,6 +53,7 @@ object UpdateChecker {
     }
 
     suspend fun checkForUpdate(
+        context: Context,
         currentVersionCode: Long = BuildConfig.VERSION_CODE.toLong()
     ): UpdateState = withContext(Dispatchers.IO) {
         try {
@@ -60,16 +63,16 @@ object UpdateChecker {
                 .build()
             checkClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return@withContext UpdateState.Failed("HTTP ${response.code}")
+                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_http, response.code))
                 }
                 val payload = response.body?.string().orEmpty()
                 if (payload.isBlank()) {
-                    return@withContext UpdateState.Failed("Empty release response")
+                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_empty))
                 }
                 val release = try {
                     CoreHttp.json.decodeFromString<ReleaseResponse>(payload)
                 } catch (e: Exception) {
-                    return@withContext UpdateState.Failed("Bad release data")
+                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_bad_data))
                 }
                 // Prefer semantic comparison: the installed app is up to date
                 // when its versionName is equal to or newer than the tag.
@@ -91,16 +94,22 @@ object UpdateChecker {
                         // versionName comparison; equal means up to date.
                         val stripped = release.tagName.trimStart('v', 'V')
                         if (stripped.isBlank()) {
-                            return@withContext UpdateState.Failed("Bad release data")
+                            return@withContext UpdateState.Failed(context.getString(R.string.update_err_bad_data))
                         }
                         if (stripped == BuildConfig.VERSION_NAME) {
                             return@withContext UpdateState.UpToDate(BuildConfig.VERSION_NAME)
                         }
                     }
                 }
-                val asset = release.assets.firstOrNull()
+                // Prefer the APK asset: releases may also attach checksums or
+                // bundles, and blindly taking the first asset can hand the
+                // downloader a non-installable file.
+                val asset = release.assets.firstOrNull {
+                    it.browserDownloadUrl.substringBefore('?')
+                        .endsWith(".apk", ignoreCase = true)
+                } ?: release.assets.firstOrNull()
                 if (asset == null || asset.browserDownloadUrl.isBlank()) {
-                    return@withContext UpdateState.Failed("No APK asset")
+                    return@withContext UpdateState.Failed(context.getString(R.string.update_err_no_asset))
                 }
                 UpdateState.Available(
                     version = release.tagName.trimStart('v', 'V').ifBlank { release.tagName },
@@ -110,9 +119,9 @@ object UpdateChecker {
                 )
             }
         } catch (e: IOException) {
-            UpdateState.Failed(e.message?.take(120) ?: "Network error")
+            UpdateState.Failed(context.getString(R.string.update_err_network, e.message?.take(120) ?: "—"))
         } catch (e: Exception) {
-            UpdateState.Failed(e.message?.take(120) ?: "Check failed")
+            UpdateState.Failed(context.getString(R.string.update_err_failed, e.message?.take(120) ?: "—"))
         }
     }
 

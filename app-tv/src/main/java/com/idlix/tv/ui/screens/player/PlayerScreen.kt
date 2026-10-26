@@ -1,9 +1,7 @@
 package com.idlix.tv.ui.screens.player
 
-import android.content.Context
 import android.graphics.Color
 import android.net.Uri
-import android.os.Looper
 import android.view.KeyEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -43,24 +41,11 @@ import androidx.tv.material3.Border
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.Renderer
-import androidx.media3.exoplayer.hls.HlsMediaSource
-import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.SingleSampleMediaSource
-import androidx.media3.common.text.Cue
-import androidx.media3.common.text.CueGroup
-import androidx.media3.exoplayer.text.TextOutput
-import androidx.media3.exoplayer.text.TextRenderer
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -71,7 +56,6 @@ import androidx.tv.material3.Text
 import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.input.GamepadKeys
 import com.idlix.tv.ui.input.GamepadKeys.PlayerActions
-import com.idlix.data.net.IdlixDomainResolver
 import com.idlix.tv.R
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixLightGray
@@ -79,57 +63,6 @@ import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.ArrayList
-
-@OptIn(UnstableApi::class)
-private class QueryPreservingDataSource(
-    private val upstream: androidx.media3.datasource.DataSource,
-    private val tokenQuery: String
-) : androidx.media3.datasource.DataSource {
-
-    override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
-        upstream.addTransferListener(transferListener)
-    }
-
-    override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-        val uri = dataSpec.uri
-        val uriStr = uri.toString()
-        val finalUri = if (tokenQuery.isNotBlank() && !uriStr.contains("t=")) {
-            val delimiter = if (uriStr.contains("?")) "&" else "?"
-            Uri.parse("$uriStr$delimiter$tokenQuery")
-        } else {
-            uri
-        }
-        val finalSpec = if (finalUri != uri) {
-            dataSpec.buildUpon().setUri(finalUri).build()
-        } else {
-            dataSpec
-        }
-        return upstream.open(finalSpec)
-    }
-
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        return upstream.read(buffer, offset, length)
-    }
-
-    override fun getUri(): Uri? = upstream.uri
-
-    override fun getResponseHeaders(): Map<String, List<String>> = upstream.responseHeaders
-
-    override fun close() {
-        upstream.close()
-    }
-}
-
-@OptIn(UnstableApi::class)
-private class QueryPreservingDataSourceFactory(
-    private val upstreamFactory: androidx.media3.datasource.DataSource.Factory,
-    private val tokenQuery: String
-) : androidx.media3.datasource.DataSource.Factory {
-    override fun createDataSource(): androidx.media3.datasource.DataSource {
-        return QueryPreservingDataSource(upstreamFactory.createDataSource(), tokenQuery)
-    }
-}
 
 fun letterboxBottomPadding(viewW: Float, viewH: Float, videoW: Float, videoH: Float): Float {
     if (viewW <= 0f || viewH <= 0f || videoW <= 0f || videoH <= 0f) return 0.08f
@@ -564,90 +497,11 @@ fun PlayerScreen(
             }
 
             val httpDataSourceFactory = remember(tokenQuery) {
-                val baseHttp = DefaultHttpDataSource.Factory()
-                    .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-                    // Explicit timeouts so dead mirrors fail fast instead of
-                    // hanging on the OS default.
-                    .setConnectTimeoutMs(8000)
-                    .setReadTimeoutMs(8000)
-                    .setDefaultRequestProperties(
-                        mapOf(
-                            "Referer" to IdlixDomainResolver.referer(),
-                            "Origin" to IdlixDomainResolver.origin()
-                        )
-                    )
-                QueryPreservingDataSourceFactory(baseHttp, tokenQuery)
-            }
-
-            fun buildMediaSource(
-                masterUrl: String,
-                sub: com.idlix.data.model.SubtitleTrack?
-            ): androidx.media3.exoplayer.source.MediaSource {
-                val mediaItem = MediaItem.Builder()
-                    .setUri(masterUrl)
-                    .setMimeType(MimeTypes.APPLICATION_M3U8)
-                    .build()
-
-                val hlsSource = HlsMediaSource.Factory(httpDataSourceFactory)
-                    // Single-variant IDLIX playlists carry full variant info, so
-                    // chunkless preparation shortens tune-in without extra fetches.
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem)
-                if (sub == null) return hlsSource
-
-                val mimeType = if (sub.path.endsWith(".srt", ignoreCase = true)) {
-                    MimeTypes.APPLICATION_SUBRIP
-                } else {
-                    MimeTypes.TEXT_VTT
-                }
-
-                val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.path))
-                    .setMimeType(mimeType)
-                    .setLanguage(sub.lang)
-                    .setLabel(sub.label)
-                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
-                    .build()
-
-                val subUri = Uri.parse(sub.path)
-                val subDataSourceFactory = if (subUri.scheme == "file" || subUri.scheme == null) {
-                    DefaultDataSource.Factory(context)
-                } else {
-                    httpDataSourceFactory
-                }
-
-                val subtitleSource = SingleSampleMediaSource.Factory(subDataSourceFactory)
-                    .createMediaSource(subtitleConfig, C.TIME_UNSET)
-
-                return MergingMediaSource(hlsSource, subtitleSource)
+                MediaSourceHelper.createHttpDataSourceFactory(tokenQuery)
             }
 
             val exoPlayer = remember(context, resolved.hlsMasterUrl) {
-                val renderersFactory = object : DefaultRenderersFactory(context) {
-                    override fun buildTextRenderers(
-                        context: Context,
-                        output: TextOutput,
-                        outputLooper: Looper,
-                        extensionRendererMode: Int,
-                        out: ArrayList<Renderer>
-                    ) {
-                        // Normalize cue line so SubtitleView.bottomPaddingFraction applies:
-                        // it only affects cues with line == DIMEN_UNSET. Horizontal
-                        // position/alignment are preserved.
-                        val normalizedOutput = TextOutput { cueGroup ->
-                            output.onCues(
-                                CueGroup(
-                                    cueGroup.cues.map { cue ->
-                                        cue.buildUpon().setLine(Cue.DIMEN_UNSET, cue.lineType).build()
-                                    },
-                                    cueGroup.presentationTimeUs
-                                )
-                            )
-                        }
-                        val renderer = TextRenderer(normalizedOutput, outputLooper)
-                        renderer.experimentalSetLegacyDecodingEnabled(true)
-                        out.add(renderer)
-                    }
-                }
+                val renderersFactory = MediaSourceHelper.createRenderersFactory(context)
 
                 // P0 streaming backlog: deeper buffers to ride out mirror stalls.
                 val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
@@ -673,7 +527,7 @@ fun PlayerScreen(
                     val activeSub = resolved.subtitles.firstOrNull { it.lang == "id" }
                         ?: resolved.subtitles.firstOrNull()
 
-                    val finalMediaSource = buildMediaSource(resolved.hlsMasterUrl, activeSub)
+                    val finalMediaSource = MediaSourceHelper.buildMediaSource(context, resolved.hlsMasterUrl, activeSub, httpDataSourceFactory)
                     setMediaSource(finalMediaSource)
 
                     trackSelectionParameters = trackSelectionParameters.buildUpon()
@@ -702,7 +556,7 @@ fun PlayerScreen(
             fun applySubtitleTrack(track: com.idlix.data.model.SubtitleTrack?) {
                 val currentPos = exoPlayer.currentPosition
                 val wasPlaying = exoPlayer.isPlaying
-                val newSource = buildMediaSource(resolved.hlsMasterUrl, track)
+                val newSource = MediaSourceHelper.buildMediaSource(context, resolved.hlsMasterUrl, track, httpDataSourceFactory)
                 exoPlayer.setMediaSource(newSource, currentPos)
                 val selector = exoPlayer.trackSelectionParameters.buildUpon()
                 if (track != null) {
