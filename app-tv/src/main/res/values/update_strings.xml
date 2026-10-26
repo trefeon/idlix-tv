@@ -17,6 +17,8 @@
     <string name="update_err_empty">Empty release response</string>
     <string name="update_err_bad_data">Bad release data</string>
     <string name="update_err_no_asset">No APK asset in this release</string>
+    <string name="update_err_rate_limited">GitHub rate limit reached. Try again after %1$s</string>
+    <string name="update_err_rate_limited_soon">GitHub rate limit reached. Please try again shortly</string>
     <string name="update_err_network">Network error: %1$s</string>
     <string name="update_err_failed">Check failed: %1$s</string>
     <string name="update_err_install">Install failed: %1$s</string>
