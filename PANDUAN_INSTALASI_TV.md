@@ -78,7 +78,7 @@ Ada 3 metode mudah yang bisa Anda pilih sesuai kondisi TV Anda:
 
 1. Buka **Google Play Store** di TV, cari dan pasang aplikasi **Downloader by AFTVnews**.
 2. Buka aplikasi **Downloader** di TV.
-3. Masukkan link download langsung dari file APK Anda pada kolom URL yang disediakan (misalnya link Google Drive publik atau link rilis GitHub).
+3. Masukkan link download langsung dari file APK Anda pada kolom URL yang disediakan (misalnya dari [halaman rilis](https://github.com/trefeon/idlix-tv/releases)).
 4. Tekan tombol **Go**. File akan terunduh langsung ke TV.
 5. Setelah unduhan selesai, jendela instalasi otomatis muncul. Pilih **Install**.
 
@@ -91,10 +91,10 @@ Ada 3 metode mudah yang bisa Anda pilih sesuai kondisi TV Anda:
 * **Solusi**: Klik tulisan **"Detail Selengkapnya (More details)"**, lalu pilih **"Tetap Instal (Install anyway)"**. Aplikasi ini 100% aman dan bebas virus/iklan.
 
 ### 2. Status "Koneksi Gagal" saat Uji Koneksi di Pengaturan TV?
-* **Cek 1**: Pastikan komputer/laptop yang menjalankan Backend API dalam keadaan menyala dan terminal/Docker tidak ditutup.
-* **Cek 2**: Pastikan TV dan Komputer terhubung ke **satu jaringan Wi-Fi/router yang sama**.
-* **Cek 3**: Jangan gunakan `http://localhost:5376/` di TV, melainkan gunakan IP lokal komputer Anda (contoh: `http://192.168.x.x:5376/`).
-* **Cek 4**: Cek firewall di komputer Anda, pastikan port `5376` diizinkan menerima koneksi dari jaringan lokal.
+* **Cek 1**: Pastikan TV terhubung ke internet (buka YouTube atau Play Store untuk memastikan Wi-Fi benar-benar online, bukan hanya tersambung ke router).
+* **Cek 2**: Mirror IDLIX kadang berganti alamat — tutup aplikasi IDLIX sepenuhnya lalu buka kembali agar aplikasi me-resolve ulang alamat terbaru dari `https://idlix.net/`, kemudian ulangi Uji Koneksi.
+* **Cek 3**: Jika masih gagal, perbarui aplikasi ke rilis terbaru dari [halaman rilis](https://github.com/trefeon/idlix-tv/releases) — versi lama bisa menunjuk ke mirror yang sudah mati.
+* **Cek 4**: Jika semua perangkat di rumah tidak bisa membuka situs streaming, kemungkinan jaringan ISP Anda yang bermasalah — coba hotspot HP sebagai pembanding.
 
 ### 3. Subtitle tidak muncul atau ingin ganti bahasa?
 * Saat film diputar, tekan tombol arah **Atas/Bawah** di remote TV untuk memunculkan panel kontrol player.

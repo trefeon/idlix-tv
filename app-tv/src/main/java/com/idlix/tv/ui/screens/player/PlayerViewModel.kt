@@ -6,10 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.idlix.data.local.WatchHistoryStore
 import com.idlix.data.model.EpisodeItem
 import com.idlix.data.model.ResolvedPlayback
-import com.idlix.data.model.Season
 import com.idlix.data.model.SubdlSubtitle
 import com.idlix.data.model.SubtitleTrack
-import com.idlix.data.repository.IdlixRepository
 import com.idlix.data.repository.SubdlRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +24,7 @@ data class NextEpisodeInfo(
 )
 
 data class PlayerUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val countdownSeconds: Int = 0,
     val resolvedStream: ResolvedPlayback? = null,
     val selectedSubtitle: SubtitleTrack? = null,
@@ -44,20 +42,14 @@ class PlayerViewModel(
     application: Application
 ) : AndroidViewModel(application) {
 
-    private val repository = IdlixRepository()
     private val historyStore = WatchHistoryStore.getInstance(application.applicationContext)
 
-    private val _uiState = MutableStateFlow(PlayerUiState())
+    private val _uiState = MutableStateFlow(PlayerUiState(isLoading = false))
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private var currentContentId: String = ""
     private var currentContentType: String = ""
     private var currentContentTitle: String = ""
-    private var currentPosterUrl: String? = null
-    private var currentBackdropUrl: String? = null
-    private var currentSlug: String? = null
-    private var currentSeasonNumber: Int? = null
-    private var currentEpisodeNumber: Int? = null
 
     fun loadStream(
         contentType: String,
@@ -72,11 +64,6 @@ class PlayerViewModel(
         currentContentId = contentId
         currentContentType = contentType
         currentContentTitle = title
-        currentPosterUrl = posterUrl
-        currentBackdropUrl = backdropUrl
-        currentSlug = slug
-        currentSeasonNumber = seasonNumber
-        currentEpisodeNumber = episodeNumber
 
         val savedPos = historyStore.getSavedPosition(contentId)
 
@@ -92,180 +79,15 @@ class PlayerViewModel(
             episodeNumber = episodeNumber
         )
 
-        viewModelScope.launch {
-            _uiState.value = PlayerUiState(
-                isLoading = true,
-                initialPositionMs = savedPos,
-                nextEpisode = null,
-                isNextEpisodeDismissed = false
-            )
-
-            // Asynchronously resolve the next episode in background for TV Series
-            if (contentType == "episode" && !slug.isNullOrBlank()) {
-                resolveNextEpisode(
-                    seriesSlug = slug,
-                    currentEpisodeId = contentId,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    fallbackTitle = title,
-                    posterUrl = posterUrl,
-                    backdropUrl = backdropUrl
-                )
-            }
-
-            val result = repository.resolveStream(
-                contentType = contentType,
-                contentId = contentId,
-                contentTitle = title,
-                onCountdown = { sec ->
-                    _uiState.value = _uiState.value.copy(countdownSeconds = sec)
-                }
-            )
-
-            result.onSuccess { resolved ->
-                val defaultSub = resolved.subtitles.firstOrNull { it.lang == "id" }
-                    ?: resolved.subtitles.firstOrNull()
-
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    resolvedStream = resolved,
-                    selectedSubtitle = defaultSub,
-                    isSubtitleEnabled = defaultSub != null
-                )
-            }.onFailure { err ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = err.localizedMessage ?: "Failed to play video"
-                )
-            }
-        }
-    }
-
-    private fun resolveNextEpisode(
-        seriesSlug: String,
-        currentEpisodeId: String,
-        seasonNumber: Int?,
-        episodeNumber: Int?,
-        fallbackTitle: String,
-        posterUrl: String?,
-        backdropUrl: String?
-    ) {
-        viewModelScope.launch {
-            try {
-                val series = repository.getSeriesDetail(seriesSlug) ?: return@launch
-                val defaultSeason = series.defaultSeason
-                val seriesTitle = series.title.ifBlank { fallbackTitle.substringBefore(" -") }
-                val rawSeasons = series.seasons.ifEmpty {
-                    if (defaultSeason != null) {
-                        listOf(Season(seasonNumber = defaultSeason.seasonNumber, name = defaultSeason.name))
-                    } else emptyList()
-                }
-                val allSeasons = rawSeasons.sortedBy { it.seasonNumber }
-
-                var currentSeasonNum = seasonNumber
-                var currentEpNum = episodeNumber
-                var seasonEpisodes: List<EpisodeItem> = emptyList()
-
-                // Strategy 1: Check if currentEpisodeId is in defaultSeason
-                if (defaultSeason?.episodes?.any { it.id == currentEpisodeId } == true) {
-                    currentSeasonNum = defaultSeason.seasonNumber
-                    seasonEpisodes = defaultSeason.episodes
-                } else if (currentSeasonNum != null && defaultSeason?.seasonNumber == currentSeasonNum && !defaultSeason.episodes.isNullOrEmpty()) {
-                    seasonEpisodes = defaultSeason.episodes
-                } else if (currentSeasonNum != null) {
-                    val epDetail = try {
-                        repository.getEpisodeDetail(seriesSlug, currentSeasonNum, 1)
-                    } catch (_: Exception) {
-                        null
-                    }
-                    seasonEpisodes = epDetail?.season?.episodes ?: emptyList()
-                }
-
-                // Strategy 2: If seasonEpisodes is still empty or currentEpisodeId not found, scan all seasons
-                if (seasonEpisodes.isEmpty() || (currentEpisodeId.isNotBlank() && seasonEpisodes.none { it.id == currentEpisodeId } && currentEpNum == null)) {
-                    for (s in allSeasons) {
-                        if (s.seasonNumber == defaultSeason?.seasonNumber && !defaultSeason.episodes.isNullOrEmpty()) {
-                            if (defaultSeason.episodes.any { it.id == currentEpisodeId }) {
-                                currentSeasonNum = s.seasonNumber
-                                seasonEpisodes = defaultSeason.episodes
-                                break
-                            }
-                        } else {
-                            val epDetail = try {
-                                repository.getEpisodeDetail(seriesSlug, s.seasonNumber, 1)
-                            } catch (_: Exception) {
-                                null
-                            }
-                            val eps = epDetail?.season?.episodes ?: emptyList()
-                            if (eps.any { it.id == currentEpisodeId }) {
-                                currentSeasonNum = s.seasonNumber
-                                seasonEpisodes = eps
-                                break
-                            }
-                        }
-                    }
-                }
-
-                if (seasonEpisodes.isEmpty()) return@launch
-
-                // Find index of current episode in this season
-                var currentIndex = seasonEpisodes.indexOfFirst { it.id == currentEpisodeId }
-                if (currentIndex == -1 && currentEpNum != null) {
-                    currentIndex = seasonEpisodes.indexOfFirst { it.episodeNumber == currentEpNum }
-                }
-
-                if (currentIndex != -1 && currentEpNum == null) {
-                    currentEpNum = seasonEpisodes[currentIndex].episodeNumber
-                }
-
-                if (currentIndex != -1 && currentIndex + 1 < seasonEpisodes.size) {
-                    // Next episode is in the same season!
-                    val nextEp = seasonEpisodes[currentIndex + 1]
-                    _uiState.value = _uiState.value.copy(
-                        nextEpisode = NextEpisodeInfo(
-                            episode = nextEp,
-                            seasonNumber = currentSeasonNum ?: 1,
-                            seriesTitle = seriesTitle,
-                            seriesSlug = seriesSlug,
-                            posterUrl = nextEp.fullStillUrl.ifBlank { posterUrl },
-                            backdropUrl = backdropUrl ?: series.fullBackdropUrl
-                        )
-                    )
-                } else if (currentSeasonNum != null) {
-                    // Check if there is a next season
-                    val nextSeason = allSeasons.firstOrNull { it.seasonNumber > currentSeasonNum }
-                    if (nextSeason != null) {
-                        // Load episode 1 of next season
-                        val nextSeasonDetail = try {
-                            repository.getEpisodeDetail(seriesSlug, nextSeason.seasonNumber, 1)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        val nextEp = nextSeasonDetail?.season?.episodes?.firstOrNull()
-                            ?: nextSeasonDetail?.episode
-                        if (nextEp != null) {
-                            _uiState.value = _uiState.value.copy(
-                                nextEpisode = NextEpisodeInfo(
-                                    episode = nextEp,
-                                    seasonNumber = nextSeason.seasonNumber,
-                                    seriesTitle = seriesTitle,
-                                    seriesSlug = seriesSlug,
-                                    posterUrl = nextEp.fullStillUrl.ifBlank { posterUrl },
-                                    backdropUrl = backdropUrl ?: series.fullBackdropUrl
-                                )
-                            )
-                        } else {
-                            _uiState.value = _uiState.value.copy(nextEpisode = null)
-                        }
-                    } else {
-                        // Final episode of final season: stop completely
-                        _uiState.value = _uiState.value.copy(nextEpisode = null)
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("PlayerViewModel", "Failed to resolve next episode: ${e.message}")
-            }
-        }
+        // Direct source not yet wired: fail-closed empty state, no backend call.
+        // History + SubDL subtitle flows below remain fully functional.
+        _uiState.value = PlayerUiState(
+            isLoading = false,
+            initialPositionMs = savedPos,
+            nextEpisode = null,
+            isNextEpisodeDismissed = false,
+            error = "Konten belum tersedia — sumber langsung segera hadir."
+        )
     }
 
     fun dismissNextEpisode() {
@@ -276,17 +98,6 @@ class PlayerViewModel(
         onReadyToPlay: ((NextEpisodeInfo) -> Unit)? = null
     ) {
         val next = _uiState.value.nextEpisode ?: return
-        val nextTitle = "${next.seriesTitle} - ${next.episode.name}"
-        loadStream(
-            contentType = "episode",
-            contentId = next.episode.id,
-            title = nextTitle,
-            posterUrl = next.posterUrl,
-            backdropUrl = next.backdropUrl,
-            slug = next.seriesSlug,
-            seasonNumber = next.seasonNumber,
-            episodeNumber = next.episode.episodeNumber
-        )
         onReadyToPlay?.invoke(next)
     }
 
@@ -346,6 +157,12 @@ class PlayerViewModel(
                     updatedSubs.add(0, downloaded)
                     _uiState.value = _uiState.value.copy(
                         resolvedStream = currentStream.copy(subtitles = updatedSubs),
+                        selectedSubtitle = downloaded,
+                        isSubtitleEnabled = true,
+                        isSubtitlePickerVisible = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
                         selectedSubtitle = downloaded,
                         isSubtitleEnabled = true,
                         isSubtitlePickerVisible = false

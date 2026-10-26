@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Text
 import com.idlix.tv.R
@@ -43,6 +44,7 @@ fun MoviesScreen(
             Text(
                 text = uiState.error ?: "",
                 color = NetflixWhite,
+                fontSize = 16.sp,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp)

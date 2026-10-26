@@ -28,18 +28,18 @@ fun TvSwimlaneRow(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 12.dp)
     ) {
         Text(
             text = title,
             color = NetflixWhite,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 24.dp, bottom = 8.dp)
+            modifier = Modifier.padding(start = 48.dp, bottom = 12.dp)
         )
 
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 6.dp)
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 12.dp)
         ) {
             items(items, key = { it.id }) { movie ->
                 TvMovieCard(
@@ -47,7 +47,7 @@ fun TvSwimlaneRow(
                     posterUrl = movie.fullPosterUrl,
                     rating = movie.formattedRating,
                     quality = movie.quality,
-                    modifier = Modifier.padding(end = 12.dp),
+                    modifier = Modifier.padding(end = 16.dp),
                     onFocus = { onItemFocus?.invoke(movie) },
                     onClick = { onItemClick(movie) }
                 )

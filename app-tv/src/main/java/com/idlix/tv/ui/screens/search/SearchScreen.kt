@@ -115,7 +115,7 @@ fun SearchScreen(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
-            .padding(horizontal = 28.dp, vertical = 20.dp)
+            .padding(horizontal = 48.dp, vertical = 20.dp)
     ) {
         // Search Input Bar
         val isBarFocused = isInputFocused || isClearFocused
@@ -145,7 +145,7 @@ fun SearchScreen(
                 onValueChange = { viewModel.onQueryChange(it) },
                 textStyle = TextStyle(
                     color = NetflixWhite,
-                    fontSize = 15.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
                 ),
                 cursorBrush = SolidColor(NetflixRed),
@@ -289,7 +289,7 @@ fun SearchScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Quick Search Tags for TV Remote (only shown when query is empty, matching mobile UX)
         if (uiState.query.isBlank()) {
@@ -304,11 +304,11 @@ fun SearchScreen(
                 Text(
                     text = stringResource(R.string.popular_searches),
                     color = NetflixLightGray,
-                    fontSize = 12.sp,
+                            fontSize = 14.sp,
                     modifier = Modifier.padding(end = 8.dp)
                 )
                 TvLazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(quickSearches) { tag ->
                         val isFirstTag = tag == quickSearches.firstOrNull()
@@ -353,13 +353,13 @@ fun SearchScreen(
                                     }
                                 }
                         ) {
-                            Text(text = tag, fontSize = 11.sp)
+                            Text(text = tag, fontSize = 12.sp)
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // Results Section
@@ -372,20 +372,22 @@ fun SearchScreen(
                 Text(
                     text = stringResource(R.string.no_results_for, uiState.query),
                     color = NetflixLightGray,
+                    fontSize = 14.sp,
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else if (uiState.results.isEmpty()) {
                 Text(
                     text = stringResource(R.string.search_hint),
                     color = NetflixLightGray,
+                    fontSize = 14.sp,
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else {
                 TvLazyVerticalGrid(
                     columns = TvGridCells.Adaptive(135.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier
                         .fillMaxSize()
                         .focusProperties {

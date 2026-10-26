@@ -3,7 +3,6 @@ package com.idlix.tv.ui.screens.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.idlix.data.model.SearchResultItem
-import com.idlix.data.repository.IdlixRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,9 +17,7 @@ data class SearchUiState(
     val error: String? = null
 )
 
-class SearchViewModel(
-    private val repository: IdlixRepository = IdlixRepository()
-) : ViewModel() {
+class SearchViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -38,19 +35,12 @@ class SearchViewModel(
 
         searchJob = viewModelScope.launch {
             delay(400) // debounce
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                val results = repository.search(newQuery.trim())
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    results = results
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.localizedMessage ?: "Pencarian gagal"
-                )
-            }
+            // Direct source not yet wired: empty-state safe, no backend call.
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                results = emptyList(),
+                error = null
+            )
         }
     }
 }

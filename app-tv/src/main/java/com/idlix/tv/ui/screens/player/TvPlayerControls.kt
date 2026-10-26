@@ -156,7 +156,7 @@ fun TvPlayerControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopStart)
-                    .padding(horizontal = 36.dp, vertical = 28.dp),
+                    .padding(horizontal = 48.dp, vertical = 28.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -284,7 +284,7 @@ fun TvPlayerControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 36.dp, vertical = 24.dp)
+                    .padding(horizontal = 48.dp, vertical = 24.dp)
             ) {
                 val targetPos = if (isSeekFocused) scrubPosMs else currentPosMs
                 val progress = if (durationMs > 0) (targetPos.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
@@ -398,7 +398,7 @@ fun TvPlayerControls(
                                         Text(
                                             text = stringResource(R.string.jumping_to, justCommittedTarget!!),
                                             color = NetflixRed,
-                                            fontSize = 12.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     } else {
@@ -412,13 +412,13 @@ fun TvPlayerControls(
                                             Text(
                                                 text = "${formatTime(scrubPosMs)}$deltaStr",
                                                 color = NetflixWhite,
-                                                fontSize = 13.sp,
+                                                fontSize = 14.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
                                                 text = stringResource(R.string.press_ok_to_play),
                                                 color = NetflixLightGray,
-                                                fontSize = 10.sp
+                                                fontSize = 12.sp
                                             )
                                         }
                                     }
@@ -468,7 +468,7 @@ fun TvPlayerControls(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -483,7 +483,7 @@ fun TvPlayerControls(
                         Text(
                             text = "${formatTime(targetPos)} / ${formatTime(durationMs)}",
                             color = if (isSeekFocused) NetflixWhite else NetflixLightGray,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = if (isSeekFocused) FontWeight.Bold else FontWeight.Medium
                         )
 
@@ -496,7 +496,7 @@ fun TvPlayerControls(
                                 Text(
                                     text = stringResource(R.string.seek_mode),
                                     color = NetflixWhite,
-                                    fontSize = 10.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -542,7 +542,7 @@ fun TvPlayerControls(
                             }
                             Text(
                                 text = "Sub: $displayLabel",
-                                fontSize = 12.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }

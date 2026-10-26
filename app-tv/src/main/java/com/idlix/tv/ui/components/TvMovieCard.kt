@@ -83,7 +83,7 @@ fun TvMovieCard(
                     onFocus?.invoke()
                 }
             },
-        scale = CardDefaults.scale(focusedScale = 1.0f),
+        scale = CardDefaults.scale(focusedScale = 1.08f),
         glow = CardDefaults.glow(focusedGlow = Glow.None),
         shape = CardDefaults.shape(shape = CardShape),
         border = CardDefaults.border(
@@ -125,7 +125,7 @@ fun TvMovieCard(
                     Text(
                         text = quality,
                         color = NetflixWhite,
-                        fontSize = 9.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -135,12 +135,12 @@ fun TvMovieCard(
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(6.dp)
+                    .padding(8.dp)
             ) {
                 Text(
                     text = title,
                     color = NetflixWhite,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -157,7 +157,7 @@ fun TvMovieCard(
                         Text(
                             text = rating,
                             color = NetflixLightGray,
-                            fontSize = 10.sp
+                            fontSize = 12.sp
                         )
                     }
                 }

@@ -1,0 +1,16 @@
+<resources>
+    <string name="update_title">App Updates</string>
+    <string name="update_check">Check for Updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">Up to date (%1$s)</string>
+    <string name="update_available_title">Update available: %1$s</string>
+    <string name="update_size">Size: %1$s</string>
+    <string name="update_download">Download Update</string>
+    <string name="update_downloading">Downloading… %1$d%%</string>
+    <string name="update_downloaded">Download complete. Install now?</string>
+    <string name="update_install">Install Update</string>
+    <string name="update_failed">Update check failed: %1$s</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_channel_name">App updates</string>
+    <string name="update_channel_desc">Notifications when a new IDLIX TV release is available</string>
+</resources>

@@ -30,24 +30,40 @@ android {
         }
     }
 
-    signingConfigs {
-        create("release") {
-            val storeFilePath = localProperties.getProperty("storeFile") ?: "/Users/abdi/upload-keystore.jks"
-            val keystoreFile = file(storeFilePath)
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = localProperties.getProperty("storePassword")
-                keyAlias = localProperties.getProperty("keyAlias")
-                keyPassword = localProperties.getProperty("keyPassword")
+    // Release signing is optional: present keystore → signed APK; absent → unsigned APK (CI default).
+    // Provide via local.properties (storeFile/storePassword/keyAlias/keyPassword) or env
+    // (IDLIX_KEYSTORE_FILE/IDLIX_KEYSTORE_PASSWORD/IDLIX_KEY_ALIAS/IDLIX_KEY_PASSWORD).
+    val releaseKeystorePath = localProperties.getProperty("storeFile")
+        ?: System.getenv("IDLIX_KEYSTORE_FILE")
+    val releaseKeystorePassword = localProperties.getProperty("storePassword")
+        ?: System.getenv("IDLIX_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = localProperties.getProperty("keyAlias")
+        ?: System.getenv("IDLIX_KEY_ALIAS")
+    val releaseKeyPassword = localProperties.getProperty("keyPassword")
+        ?: System.getenv("IDLIX_KEY_PASSWORD")
+    val hasReleaseKey = !releaseKeystorePath.isNullOrBlank()
+        && file(releaseKeystorePath).exists()
+        && !releaseKeystorePassword.isNullOrBlank()
+        && !releaseKeyAlias.isNullOrBlank()
+        && !releaseKeyPassword.isNullOrBlank()
+    if (hasReleaseKey) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
+    } else {
+        logger.warn("No release keystore configured: :app-mobile:assembleRelease will produce an UNSIGNED APK.")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

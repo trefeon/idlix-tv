@@ -112,16 +112,16 @@ fun TvNavDrawer(
                 .fillMaxHeight()
                 .width(drawerWidth)
                 .background(NetflixBlack.copy(alpha = if (isExpanded) 0.98f else 0.92f))
-                .padding(vertical = 24.dp, horizontal = 10.dp)
+                .padding(vertical = 24.dp, horizontal = 12.dp)
                 .onFocusChanged { isExpanded = it.hasFocus },
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
             horizontalAlignment = Alignment.Start
         ) {
             // Official IDLIX Logo
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp),
+                    .padding(bottom = 16.dp),
                 contentAlignment = if (isExpanded) Alignment.CenterStart else Alignment.Center
             ) {
                 Image(
@@ -171,7 +171,7 @@ fun TvNavDrawer(
                             Text(
                                 text = stringResource(item.labelRes),
                                 color = if (itemFocused || isSelected) NetflixWhite else NetflixLightGray,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
                         }

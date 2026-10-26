@@ -22,7 +22,7 @@ import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.text.TextRenderer
 import com.idlix.data.model.SubtitleTrack
-import java.util.ArrayList
+import com.idlix.data.net.IdlixDomainResolver
 
 @OptIn(UnstableApi::class)
 class QueryPreservingDataSource(
@@ -82,8 +82,8 @@ object MediaSourceHelper {
             .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
             .setDefaultRequestProperties(
                 mapOf(
-                    "Referer" to "https://z2.idlixku.com/",
-                    "Origin" to "https://z2.idlixku.com"
+                    "Referer" to IdlixDomainResolver.referer(),
+                    "Origin" to IdlixDomainResolver.origin()
                 )
             )
         return QueryPreservingDataSourceFactory(baseHttp, tokenQuery)

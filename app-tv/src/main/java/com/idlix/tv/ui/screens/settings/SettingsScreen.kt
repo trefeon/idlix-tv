@@ -3,26 +3,30 @@ package com.idlix.tv.ui.screens.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
@@ -31,16 +35,22 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -51,150 +61,73 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
-import com.idlix.tv.BuildConfig
 import com.idlix.tv.R
-import com.idlix.data.api.ApiClient
-import com.idlix.data.model.SubdlResponse
-import com.idlix.data.repository.SubdlRepository
+import com.idlix.tv.ui.screens.settings.components.UpdateSettingsRow
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.Request
+import com.idlix.tv.update.UpdateState
 
+/**
+ * TV Settings: a USER-SAFE section on top, an ADVANCED section hidden behind
+ * an unlock gesture (7 taps on the version row within 3s, or D-pad
+ * Up-Up-Down-Down anywhere on this screen).
+ *
+ * The user section never renders raw URLs, API keys, timeouts, UA strings or
+ * cache sizes. Everything technical lives in the advanced section, which is
+ * session-only (relocked on process death by [SettingsViewModel]).
+ *
+ * D-pad order is the visual order: update, subtitles, cache, history, about.
+ * The unlock affordance itself is not focusable.
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: SettingsViewModel = viewModel(),
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val keyboardController = LocalSoftwareKeyboardController.current
     val scrollState = rememberScrollState()
 
-    // --- Backend API State ---
-    var currentActiveUrl by remember { mutableStateOf(ApiClient.getBaseUrl()) }
-    var inputUrl by remember { mutableStateOf(currentActiveUrl) }
-    var isUrlInputFocused by remember { mutableStateOf(false) }
+    val updateState by viewModel.updateState.collectAsState()
+    val advancedUnlocked by viewModel.advancedUnlocked.collectAsState()
+    val subtitleLang by viewModel.subtitleLanguage.collectAsState()
+    val cacheMessage by viewModel.cacheMessage.collectAsState()
+    val historyCleared by viewModel.historyCleared.collectAsState()
 
-    var backendTestStatus by remember { mutableStateOf<String?>(null) }
-    var isTestingBackend by remember { mutableStateOf(false) }
-    var isBackendTestSuccess by remember { mutableStateOf(false) }
-
-    // --- SubDL API Key State ---
-    var currentActiveApiKey by remember { mutableStateOf(SubdlRepository.getApiKey()) }
-    var inputApiKey by remember { mutableStateOf(currentActiveApiKey) }
-    var isApiKeyInputFocused by remember { mutableStateOf(false) }
-    var isApiKeyVisible by remember { mutableStateOf(false) }
-
-    var subdlTestStatus by remember { mutableStateOf<String?>(null) }
-    var isTestingSubdl by remember { mutableStateOf(false) }
-    var isSubdlTestSuccess by remember { mutableStateOf(false) }
-
-    // --- Global Save Notification ---
-    var saveMessage by remember { mutableStateOf<String?>(null) }
-
-    // Test Backend API
-    fun runTestBackend(targetUrl: String) {
-        scope.launch {
-            isTestingBackend = true
-            backendTestStatus = context.getString(R.string.backend_testing)
-            saveMessage = null
-
-            val formatted = if (targetUrl.endsWith("/")) targetUrl else "$targetUrl/"
-            val testEndpoint = "${formatted}api/movies?page=1&limit=1"
-
-            val result = withContext(Dispatchers.IO) {
-                val start = System.currentTimeMillis()
-                try {
-                    val req = Request.Builder()
-                        .url(testEndpoint)
-                        .get()
-                        .build()
-                    ApiClient.okHttpClient.newCall(req).execute().use { resp ->
-                        val duration = System.currentTimeMillis() - start
-                        if (resp.isSuccessful) {
-                            Pair(true, context.getString(R.string.backend_connected, resp.code, duration))
-                        } else {
-                            Pair(false, context.getString(R.string.backend_failed_http, resp.code))
-                        }
-                    }
-                } catch (e: Exception) {
-                    Pair(false, context.getString(R.string.backend_failed_error, e.localizedMessage ?: "Timeout"))
-                }
-            }
-
-            isTestingBackend = false
-            isBackendTestSuccess = result.first
-            backendTestStatus = result.second
-        }
-    }
-
-    // Test SubDL API Key
-    fun runTestSubdl(targetKey: String) {
-        scope.launch {
-            isTestingSubdl = true
-            subdlTestStatus = context.getString(R.string.subdl_testing)
-            saveMessage = null
-
-            val testEndpoint = "https://api.subdl.com/api/v1/subtitles?api_key=${targetKey.trim()}&film_name=Avatar"
-
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    val req = Request.Builder()
-                        .url(testEndpoint)
-                        .header("User-Agent", "Mozilla/5.0 (Android TV; Idlix)")
-                        .get()
-                        .build()
-                    ApiClient.okHttpClient.newCall(req).execute().use { resp ->
-                        if (resp.isSuccessful) {
-                            val body = resp.body?.string().orEmpty()
-                            val parsed = try {
-                                ApiClient.json.decodeFromString<SubdlResponse>(body)
-                            } catch (_: Exception) { null }
-
-                            if (parsed?.status == true) {
-                                Pair(true, context.getString(R.string.subdl_valid))
-                            } else {
-                                Pair(false, context.getString(R.string.subdl_quota_error))
-                            }
-                        } else {
-                            Pair(false, context.getString(R.string.subdl_invalid_http, resp.code))
-                        }
-                    }
-                } catch (e: Exception) {
-                    Pair(false, context.getString(R.string.subdl_failed_error, e.localizedMessage ?: ""))
-                }
-            }
-
-            isTestingSubdl = false
-            isSubdlTestSuccess = result.first
-            subdlTestStatus = result.second
-        }
-    }
+    var showHistoryConfirm by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
             .verticalScroll(scrollState)
+            // D-pad Up-Up-Down-Down unlock. Never consumes the key (returns
+            // false unless the sequence completes) so remote navigation keeps
+            // working; focus order is untouched.
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionUp -> viewModel.onDpadUp()
+                    Key.DirectionDown -> viewModel.onDpadDown()
+                    else -> false
+                }
+            }
             .padding(horizontal = 36.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Page Title Header
+        // ---- Header ------------------------------------------------------
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = Icons.Default.Settings,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.settings),
                 tint = NetflixRed,
                 modifier = Modifier.size(28.dp)
             )
@@ -214,395 +147,610 @@ fun SettingsScreen(
             }
         }
 
-        // ==========================================
-        // SECTION 1: BACKEND API CONFIGURATION
-        // ==========================================
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(NetflixDarkCard, RoundedCornerShape(10.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        // ================================================================
+        // USER-SAFE SECTION
+        // ================================================================
+        SectionHeader(
+            icon = Icons.Default.Refresh,
+            title = stringResource(R.string.settings_updates_title)
+        )
+        val stateSnapshot = updateState
+        UpdateSettingsRow(
+            state = stateSnapshot,
+            onCheckClick = viewModel::checkForUpdates,
+            onDownloadClick = {
+                val available = stateSnapshot as? UpdateState.Available ?: return@UpdateSettingsRow
+                viewModel.downloadUpdate(available.assetUrl)
+            },
+            onInstallClick = {
+                val downloaded = stateSnapshot as? UpdateState.Downloaded ?: return@UpdateSettingsRow
+                viewModel.installUpdate(downloaded.fileUri)
+            }
+        )
+
+        SettingsCard(
+            icon = Icons.Default.Subtitles,
+            title = stringResource(R.string.settings_subtitle_title),
+            desc = stringResource(R.string.settings_subtitle_desc)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Dns,
-                    contentDescription = null,
-                    tint = NetflixWhite,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.backend_api_header),
-                    color = NetflixWhite,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Current URL Info
-            Text(
-                text = stringResource(R.string.active_backend_url, currentActiveUrl),
-                color = NetflixLightGray,
-                fontSize = 12.sp
-            )
-
-            // Input Field URL
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(NetflixBlack, RoundedCornerShape(6.dp))
-                    .border(
-                        width = if (isUrlInputFocused) 2.dp else 1.dp,
-                        color = if (isUrlInputFocused) NetflixWhite else NetflixDarkCard,
-                        shape = RoundedCornerShape(6.dp)
-                    )
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BasicTextField(
-                    value = inputUrl,
-                    onValueChange = {
-                        inputUrl = it
-                        saveMessage = null
-                        backendTestStatus = null
-                    },
-                    textStyle = TextStyle(
-                        color = NetflixWhite,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    cursorBrush = SolidColor(NetflixRed),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { isUrlInputFocused = it.isFocused },
-                    decorationBox = { inner ->
-                        if (inputUrl.isEmpty()) {
-                            Text(
-                                text = "http://192.168.x.x:5376/",
-                                color = NetflixLightGray,
-                                fontSize = 13.sp
-                            )
-                        }
-                        inner()
-                    }
-                )
-            }
-
-            // Backend Actions
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = { runTestBackend(inputUrl) },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixBlack,
-                        focusedContainerColor = NetflixWhite,
-                        contentColor = NetflixWhite,
-                        focusedContentColor = NetflixBlack
-                    ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
-                    modifier = Modifier.height(38.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isTestingBackend) stringResource(R.string.testing) else stringResource(R.string.test_backend_connection),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        inputUrl = BuildConfig.BACKEND_API_URL
-                        backendTestStatus = null
-                        saveMessage = null
-                    },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixBlack.copy(alpha = 0.5f),
-                        focusedContainerColor = NetflixWhite,
-                        contentColor = NetflixLightGray,
-                        focusedContentColor = NetflixBlack
-                    ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
-                    modifier = Modifier.height(38.dp)
-                ) {
-                    Text(text = stringResource(R.string.reset_default_url), fontSize = 12.sp)
-                }
-            }
-
-            if (backendTestStatus != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isBackendTestSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
-                        contentDescription = null,
-                        tint = if (isBackendTestSuccess) Color(0xFF4CAF50) else NetflixRed,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = backendTestStatus ?: "",
-                        color = if (isBackendTestSuccess) Color(0xFF4CAF50) else NetflixRed,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                SubtitleOption(
+                    label = stringResource(R.string.settings_subtitle_indonesian),
+                    selected = subtitleLang == SettingsViewModel.LANG_INDONESIAN,
+                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_INDONESIAN) }
+                )
+                SubtitleOption(
+                    label = stringResource(R.string.settings_subtitle_english),
+                    selected = subtitleLang == SettingsViewModel.LANG_ENGLISH,
+                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_ENGLISH) }
+                )
+                SubtitleOption(
+                    label = stringResource(R.string.settings_subtitle_off),
+                    selected = subtitleLang == SettingsViewModel.LANG_OFF,
+                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_OFF) }
+                )
             }
         }
 
-        // ==========================================
-        // SECTION 2: THIRD-PARTY SUBTITLE (SUBDL)
-        // ==========================================
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(NetflixDarkCard, RoundedCornerShape(10.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        SettingsCard(
+            icon = Icons.Default.Image,
+            title = stringResource(R.string.settings_cache_title),
+            desc = stringResource(R.string.settings_cache_desc)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Subtitles,
-                    contentDescription = null,
-                    tint = NetflixWhite,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.subdl_api_header),
-                    color = NetflixWhite,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Text(
-                text = stringResource(R.string.subdl_api_desc),
-                color = NetflixLightGray,
-                fontSize = 12.sp
+            SettingsActionButton(
+                label = stringResource(R.string.settings_cache_title),
+                icon = Icons.Default.Refresh,
+                onClick = { viewModel.clearImageCache() }
             )
-
-            // Input Field API Key
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(NetflixBlack, RoundedCornerShape(6.dp))
-                    .border(
-                        width = if (isApiKeyInputFocused) 2.dp else 1.dp,
-                        color = if (isApiKeyInputFocused) NetflixWhite else NetflixDarkCard,
-                        shape = RoundedCornerShape(6.dp)
-                    )
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Key,
-                    contentDescription = null,
-                    tint = if (isApiKeyInputFocused) NetflixWhite else NetflixLightGray,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                BasicTextField(
-                    value = inputApiKey,
-                    onValueChange = {
-                        inputApiKey = it
-                        saveMessage = null
-                        subdlTestStatus = null
-                    },
-                    textStyle = TextStyle(
-                        color = NetflixWhite,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    cursorBrush = SolidColor(NetflixRed),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
-                    singleLine = true,
-                    visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation('*'),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { isApiKeyInputFocused = it.isFocused },
-                    decorationBox = { inner ->
-                        if (inputApiKey.isEmpty()) {
-                            Text(
-                                text = "subdl__your_api_key_here",
-                                color = NetflixLightGray,
-                                fontSize = 13.sp
-                            )
-                        }
-                        inner()
+            if (cacheMessage != null) {
+                StatusLine(
+                    ok = cacheMessage == "done",
+                    text = if (cacheMessage == "done") {
+                        stringResource(R.string.settings_cache_done)
+                    } else {
+                        stringResource(R.string.loading_error)
                     }
                 )
-            }
-
-            // SubDL Actions
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = { runTestSubdl(inputApiKey) },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixBlack,
-                        focusedContainerColor = NetflixWhite,
-                        contentColor = NetflixWhite,
-                        focusedContentColor = NetflixBlack
-                    ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
-                    modifier = Modifier.height(38.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isTestingSubdl) stringResource(R.string.testing) else stringResource(R.string.test_subdl_key),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = { isApiKeyVisible = !isApiKeyVisible },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixBlack.copy(alpha = 0.5f),
-                        focusedContainerColor = NetflixWhite,
-                        contentColor = NetflixLightGray,
-                        focusedContentColor = NetflixBlack
-                    ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
-                    modifier = Modifier.height(38.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isApiKeyVisible) "Sembunyikan" else "Tampilkan",
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        inputApiKey = SubdlRepository.DEFAULT_API_KEY
-                        subdlTestStatus = null
-                        saveMessage = null
-                    },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixBlack.copy(alpha = 0.5f),
-                        focusedContainerColor = NetflixWhite,
-                        contentColor = NetflixLightGray,
-                        focusedContentColor = NetflixBlack
-                    ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
-                    modifier = Modifier.height(38.dp)
-                ) {
-                    Text(text = stringResource(R.string.reset_default_key), fontSize = 12.sp)
-                }
-            }
-
-            if (subdlTestStatus != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isSubdlTestSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
-                        contentDescription = null,
-                        tint = if (isSubdlTestSuccess) Color(0xFF4CAF50) else NetflixRed,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = subdlTestStatus ?: "",
-                        color = if (isSubdlTestSuccess) Color(0xFF4CAF50) else NetflixRed,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
             }
         }
 
-        // ==========================================
-        // SECTION 3: SAVE ALL SETTINGS ACTION
-        // ==========================================
+        SettingsCard(
+            icon = Icons.Default.Delete,
+            title = stringResource(R.string.settings_history_title),
+            desc = stringResource(R.string.settings_history_desc)
+        ) {
+            if (!showHistoryConfirm) {
+                SettingsActionButton(
+                    label = stringResource(R.string.settings_history_title),
+                    icon = Icons.Default.Delete,
+                    onClick = { showHistoryConfirm = true }
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.settings_history_confirm_title),
+                    color = NetflixWhite,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.settings_history_confirm_desc),
+                    color = NetflixLightGray,
+                    fontSize = 12.sp
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsActionButton(
+                        label = stringResource(R.string.settings_history_no),
+                        icon = Icons.Default.Refresh,
+                        onClick = { showHistoryConfirm = false }
+                    )
+                    SettingsActionButton(
+                        label = stringResource(R.string.settings_history_yes),
+                        icon = Icons.Default.Delete,
+                        destructive = true,
+                        onClick = {
+                            showHistoryConfirm = false
+                            viewModel.clearWatchHistory()
+                        }
+                    )
+                }
+            }
+            if (historyCleared) {
+                StatusLine(
+                    ok = true,
+                    text = stringResource(R.string.settings_history_done)
+                )
+            }
+        }
+
+        // About / version row. Tapping (OK on the remote) 7 times within 3s
+        // unlocks the advanced section. Focusable, last in the user order.
+        SettingsCard(
+            icon = Icons.Default.Info,
+            title = stringResource(R.string.settings_about_title),
+            desc = stringResource(
+                R.string.settings_version_label,
+                viewModel.appVersionName,
+                viewModel.appVersionCode
+            )
+        ) {
+            SettingsActionButton(
+                label = stringResource(R.string.settings_about_title),
+                icon = Icons.Default.Info,
+                onClick = { viewModel.registerVersionClick() }
+            )
+            if (advancedUnlocked) {
+                StatusLine(
+                    ok = true,
+                    text = stringResource(R.string.adv_unlocked)
+                )
+            }
+        }
+
+        // ================================================================
+        // ADVANCED SECTION (gated, session-only)
+        // ================================================================
+        if (advancedUnlocked) {
+            SectionHeader(
+                icon = Icons.Default.Build,
+                title = stringResource(R.string.adv_section_title),
+                desc = stringResource(R.string.adv_section_desc)
+            )
+            AdvancedSubdlCard(viewModel = viewModel)
+            AdvancedResolverCard(viewModel = viewModel)
+            AdvancedErrorLogCard(viewModel = viewModel)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    // One-shot flags are consumed a few seconds after they appear.
+    if (cacheMessage != null) {
+        androidx.compose.runtime.LaunchedEffect(cacheMessage) {
+            kotlinx.coroutines.delay(4_000)
+            viewModel.consumeCacheMessage()
+        }
+    }
+    if (historyCleared) {
+        androidx.compose.runtime.LaunchedEffect(historyCleared) {
+            kotlinx.coroutines.delay(4_000)
+            viewModel.consumeHistoryCleared()
+        }
+    }
+}
+
+// ------------------------------------------------------------------ pieces
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SectionHeader(
+    icon: ImageVector,
+    title: String,
+    desc: String? = null,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            tint = NetflixRed,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+            Text(
+                text = title,
+                color = NetflixWhite,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+            if (desc != null) {
+                Text(
+                    text = desc,
+                    color = NetflixLightGray,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SettingsCard(
+    icon: ImageVector,
+    title: String,
+    desc: String,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NetflixDarkCard, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = NetflixWhite,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = title,
+                color = NetflixWhite,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Text(
+            text = desc,
+            color = NetflixLightGray,
+            fontSize = 12.sp
+        )
+        content()
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SettingsActionButton(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    destructive: Boolean = false,
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.colors(
+            containerColor = if (destructive) NetflixRed else NetflixBlack,
+            focusedContainerColor = if (destructive) {
+                NetflixRed.copy(alpha = 0.8f)
+            } else {
+                NetflixWhite
+            },
+            contentColor = NetflixWhite,
+            focusedContentColor = if (destructive) NetflixWhite else NetflixBlack
+        ),
+        shape = ButtonDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
+        modifier = Modifier.height(38.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SubtitleOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.colors(
+            containerColor = if (selected) NetflixRed else NetflixBlack,
+            focusedContainerColor = NetflixWhite,
+            contentColor = NetflixWhite,
+            focusedContentColor = NetflixBlack
+        ),
+        shape = ButtonDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
+        modifier = Modifier.height(38.dp)
+    ) {
+        Text(
+            text = if (selected) "● $label" else label,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun StatusLine(ok: Boolean, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = if (ok) Icons.Default.CheckCircle else Icons.Default.Error,
+            contentDescription = text,
+            tint = if (ok) Color(0xFF4CAF50) else NetflixRed,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = text,
+            color = if (ok) Color(0xFF4CAF50) else NetflixRed,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+// ------------------------------------------------------- advanced: SubDL key
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun AdvancedSubdlCard(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val subdlKey by viewModel.subdlKey.collectAsState()
+    val testing by viewModel.subdlTesting.collectAsState()
+    val testOk by viewModel.subdlTestOk.collectAsState()
+    val testStatus by viewModel.subdlTestStatus.collectAsState()
+    var focused by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(false) }
+
+    SettingsCard(
+        icon = Icons.Default.Key,
+        title = stringResource(R.string.adv_subdl_title),
+        desc = stringResource(R.string.adv_subdl_desc)
+    ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(NetflixBlack, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) NetflixWhite else NetflixDarkCard,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = {
-                    // Save Backend URL
-                    val formattedUrl = if (inputUrl.endsWith("/")) inputUrl else "$inputUrl/"
-                    ApiClient.setBaseUrl(formattedUrl)
-                    currentActiveUrl = ApiClient.getBaseUrl()
-                    inputUrl = currentActiveUrl
-
-                    // Save SubDL Key
-                    SubdlRepository.setApiKey(inputApiKey)
-                    currentActiveApiKey = SubdlRepository.getApiKey()
-                    inputApiKey = currentActiveApiKey
-
-                    saveMessage = context.getString(R.string.settings_saved_success)
-                },
-                colors = ButtonDefaults.colors(
-                    containerColor = NetflixRed,
-                    focusedContainerColor = Color(0xFFE50914).copy(alpha = 0.8f),
-                    contentColor = NetflixWhite,
-                    focusedContentColor = NetflixWhite
+            Icon(
+                imageVector = Icons.Default.Key,
+                contentDescription = stringResource(R.string.adv_subdl_title),
+                tint = if (focused) NetflixWhite else NetflixLightGray,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            BasicTextField(
+                value = subdlKey,
+                onValueChange = viewModel::setSubdlKeyInput,
+                textStyle = TextStyle(
+                    color = NetflixWhite,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
                 ),
-                shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
-                modifier = Modifier.height(46.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Save,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.save_all_settings),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+                cursorBrush = SolidColor(NetflixRed),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
+                singleLine = true,
+                visualTransformation = if (visible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation('*')
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focused = it.isFocused },
+                decorationBox = { inner ->
+                    if (subdlKey.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.adv_subdl_hint),
+                            color = NetflixLightGray,
+                            fontSize = 13.sp
+                        )
+                    }
+                    inner()
                 }
-            }
+            )
+        }
 
-            if (saveMessage != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = saveMessage ?: "",
-                        color = Color(0xFF4CAF50),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsActionButton(
+                label = if (testing) {
+                    context.getString(R.string.subdl_testing)
+                } else {
+                    stringResource(R.string.adv_subdl_test)
+                },
+                icon = Icons.Default.Refresh,
+                onClick = {
+                    viewModel.testSubdlKey(
+                        testingLabel = context.getString(R.string.subdl_testing),
+                        validLabel = context.getString(R.string.subdl_valid),
+                        quotaLabel = context.getString(R.string.subdl_quota_error),
+                        failedLabel = { detail ->
+                            context.getString(R.string.subdl_failed_error, detail)
+                        }
                     )
                 }
+            )
+            SettingsActionButton(
+                label = stringResource(
+                    if (visible) R.string.adv_subdl_hide else R.string.adv_subdl_show
+                ),
+                icon = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                onClick = { visible = !visible }
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsActionButton(
+                label = stringResource(R.string.adv_subdl_save),
+                icon = Icons.Default.Save,
+                onClick = { viewModel.saveSubdlKey() }
+            )
+            SettingsActionButton(
+                label = stringResource(R.string.adv_subdl_clear),
+                icon = Icons.Default.Delete,
+                onClick = { viewModel.clearSubdlKey() }
+            )
+        }
+
+        if (testStatus != null) {
+            StatusLine(ok = testOk == true, text = testStatus ?: "")
+        }
+    }
+}
+
+// ------------------------------------------------------ advanced: resolver
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun AdvancedResolverCard(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val baseUrl by viewModel.resolverBaseUrl.collectAsState()
+    val lastChecked by viewModel.resolverLastChecked.collectAsState()
+    val refreshing by viewModel.resolverRefreshing.collectAsState()
+    val notice by viewModel.resolverNotice.collectAsState()
+    var override by remember { mutableStateOf("") }
+    var focused by remember { mutableStateOf(false) }
+
+    SettingsCard(
+        icon = Icons.Default.Dns,
+        title = stringResource(R.string.adv_resolver_title),
+        desc = stringResource(R.string.adv_resolver_desc)
+    ) {
+        Text(
+            text = stringResource(R.string.adv_resolver_current, baseUrl),
+            color = NetflixWhite,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = stringResource(
+                R.string.adv_resolver_last_checked,
+                lastChecked ?: stringResource(R.string.adv_resolver_never)
+            ),
+            color = NetflixLightGray,
+            fontSize = 12.sp
+        )
+        SettingsActionButton(
+            label = stringResource(R.string.adv_resolver_refresh),
+            icon = Icons.Default.Refresh,
+            onClick = {
+                viewModel.setResolverNotice(null)
+                viewModel.refreshResolverNow()
             }
+        )
+        if (refreshing) {
+            Text(
+                text = stringResource(R.string.subdl_testing),
+                color = NetflixLightGray,
+                fontSize = 12.sp
+            )
+        }
+
+        Text(
+            text = stringResource(R.string.adv_resolver_override_label),
+            color = NetflixWhite,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(NetflixBlack, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) NetflixWhite else NetflixDarkCard,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BasicTextField(
+                value = override,
+                onValueChange = {
+                    override = it
+                    viewModel.setResolverNotice(null)
+                },
+                textStyle = TextStyle(color = NetflixWhite, fontSize = 14.sp),
+                cursorBrush = SolidColor(NetflixRed),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focused = it.isFocused },
+                decorationBox = { inner ->
+                    if (override.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.adv_resolver_override_hint),
+                            color = NetflixLightGray,
+                            fontSize = 13.sp
+                        )
+                    }
+                    inner()
+                }
+            )
+        }
+        SettingsActionButton(
+            label = stringResource(R.string.adv_resolver_apply),
+            icon = Icons.Default.Save,
+            onClick = {
+                val ok = viewModel.applyResolverOverride(override)
+                viewModel.setResolverNotice(
+                    if (ok) {
+                        context.getString(R.string.adv_resolver_saved)
+                    } else {
+                        context.getString(R.string.adv_resolver_invalid)
+                    }
+                )
+                if (ok) override = ""
+            }
+        )
+        if (notice != null) {
+            StatusLine(ok = notice == context.getString(R.string.adv_resolver_saved), text = notice ?: "")
+        }
+    }
+}
+
+// ------------------------------------------------------ advanced: error log
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun AdvancedErrorLogCard(viewModel: SettingsViewModel) {
+    val logText by viewModel.errorLogText.collectAsState()
+
+    SettingsCard(
+        icon = Icons.Default.BugReport,
+        title = stringResource(R.string.adv_log_title),
+        desc = stringResource(R.string.adv_log_desc)
+    ) {
+        if (logText.isBlank()) {
+            Text(
+                text = stringResource(R.string.adv_log_empty),
+                color = NetflixLightGray,
+                fontSize = 12.sp
+            )
+        } else {
+            Text(
+                text = logText.take(2_000),
+                color = NetflixLightGray,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 180.dp)
+                    .background(NetflixBlack, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                    .padding(10.dp)
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsActionButton(
+                label = stringResource(R.string.adv_log_refresh),
+                icon = Icons.Default.Refresh,
+                onClick = { viewModel.refreshErrorLog() }
+            )
+            SettingsActionButton(
+                label = stringResource(R.string.adv_log_clear),
+                icon = Icons.Default.Delete,
+                onClick = { viewModel.clearErrorLog() }
+            )
         }
     }
 }

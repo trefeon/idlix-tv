@@ -59,8 +59,9 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvLoadingSpinner
+import com.idlix.data.net.IdlixDomainResolver
+import com.idlix.tv.R
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
@@ -301,7 +302,7 @@ fun PlayerScreen(
                     Text(
                         text = stringResource(R.string.starting_in_seconds, uiState.countdownSeconds),
                         color = NetflixLightGray,
-                        fontSize = 13.sp
+                        fontSize = 14.sp
                     )
                 } else {
                     Text(
@@ -326,7 +327,7 @@ fun PlayerScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Button(
                         onClick = { viewModel.loadStream(contentType, contentId, title) },
                         colors = ButtonDefaults.colors(
@@ -334,7 +335,7 @@ fun PlayerScreen(
                             contentColor = NetflixWhite
                         )
                     ) {
-                        Text(text = stringResource(R.string.try_again))
+                        Text(text = stringResource(R.string.try_again), fontSize = 14.sp)
                     }
 
                     Button(
@@ -344,7 +345,7 @@ fun PlayerScreen(
                             contentColor = NetflixWhite
                         )
                     ) {
-                        Text(text = stringResource(R.string.back))
+                        Text(text = stringResource(R.string.back), fontSize = 14.sp)
                     }
                 }
             }
@@ -364,8 +365,8 @@ fun PlayerScreen(
                     .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
                     .setDefaultRequestProperties(
                         mapOf(
-                            "Referer" to "https://z2.idlixku.com/",
-                            "Origin" to "https://z2.idlixku.com"
+                            "Referer" to IdlixDomainResolver.referer(),
+                            "Origin" to IdlixDomainResolver.origin()
                         )
                     )
                 QueryPreservingDataSourceFactory(baseHttp, tokenQuery)
@@ -641,7 +642,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(
-                            end = 36.dp,
+                            end = 48.dp,
                             bottom = if (showControls) 115.dp else 40.dp
                         )
                 )

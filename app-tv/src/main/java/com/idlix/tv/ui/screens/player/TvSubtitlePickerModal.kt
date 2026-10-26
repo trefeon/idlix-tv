@@ -128,7 +128,7 @@ fun TvSubtitlePickerModal(
 
             TvLazyColumn(
                 contentPadding = PaddingValues(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 // 1. Turn Off Subtitles
@@ -150,7 +150,7 @@ fun TvSubtitlePickerModal(
                         Text(
                             text = stringResource(R.string.default_subtitle),
                             color = NetflixLightGray,
-                            fontSize = 12.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
                         )
@@ -180,7 +180,7 @@ fun TvSubtitlePickerModal(
                         Text(
                             text = stringResource(R.string.subdl_subtitles_header),
                             color = NetflixLightGray,
-                            fontSize = 12.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
 
@@ -201,7 +201,7 @@ fun TvSubtitlePickerModal(
                                         modifier = Modifier.size(12.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text(text = stringResource(R.string.search_subdl), fontSize = 10.sp)
+                                    Text(text = stringResource(R.string.search_subdl), fontSize = 12.sp)
                                 }
                             }
                         }
@@ -213,7 +213,7 @@ fun TvSubtitlePickerModal(
                         Text(
                             text = stringResource(R.string.searching_subdl),
                             color = NetflixLightGray,
-                            fontSize = 12.sp,
+                            fontSize = 14.sp,
                             modifier = Modifier.padding(vertical = 12.dp)
                         )
                     }
@@ -222,7 +222,7 @@ fun TvSubtitlePickerModal(
                         Text(
                             text = stringResource(R.string.no_subdl_found),
                             color = NetflixLightGray,
-                            fontSize = 12.sp,
+                            fontSize = 14.sp,
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
                     }
@@ -302,7 +302,7 @@ private fun SubtitleOptionCard(
                         Text(
                             text = badge,
                             color = NetflixWhite,
-                            fontSize = 9.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -313,7 +313,7 @@ private fun SubtitleOptionCard(
                     Text(
                         text = title,
                         color = NetflixWhite,
-                        fontSize = 12.sp,
+                        fontSize = 14.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -322,7 +322,7 @@ private fun SubtitleOptionCard(
                         Text(
                             text = subtitle,
                             color = NetflixLightGray,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

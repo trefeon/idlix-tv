@@ -25,9 +25,8 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "1.0.3"
-
-        val backendUrl = localProperties.getProperty("backendApiUrl") ?: "https://streamapi.abdiworks.my.id/"
-        buildConfigField("String", "BACKEND_API_URL", "\"$backendUrl\"")
+        // No backend URL: direct-source via IdlixDomainResolver (https://idlix.net/ → live mirror).
+        // SubDL key lives in core:data BuildConfig (local.properties subdlApiKey / SUBDL_API_KEY env).
 
         vectorDrawables {
             useSupportLibrary = true
@@ -38,21 +37,40 @@ android {
         }
     }
 
-    signingConfigs {
-        create("release") {
-            val storeFilePath = localProperties.getProperty("storeFile") ?: "/Users/abdi/upload-keystore.jks"
-            storeFile = file(storeFilePath)
-            storePassword = localProperties.getProperty("storePassword")
-            keyAlias = localProperties.getProperty("keyAlias")
-            keyPassword = localProperties.getProperty("keyPassword")
+    // Release signing is optional: present keystore → signed APK; absent → unsigned APK (CI default).
+    // Provide via local.properties (storeFile/storePassword/keyAlias/keyPassword) or env
+    // (RELEASE_KEYSTORE_PATH/RELEASE_KEYSTORE_PASSWORD/RELEASE_KEY_ALIAS/RELEASE_KEY_PASSWORD).
+    val releaseKeystorePath = localProperties.getProperty("storeFile")
+        ?: System.getenv("RELEASE_KEYSTORE_PATH")
+    val releaseKeystorePassword = localProperties.getProperty("storePassword")
+        ?: System.getenv("RELEASE_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = localProperties.getProperty("keyAlias")
+        ?: System.getenv("RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = localProperties.getProperty("keyPassword")
+        ?: System.getenv("RELEASE_KEY_PASSWORD")
+    val hasReleaseKey = !releaseKeystorePath.isNullOrBlank()
+        && file(releaseKeystorePath).exists()
+        && !releaseKeystorePassword.isNullOrBlank()
+        && !releaseKeyAlias.isNullOrBlank()
+        && !releaseKeyPassword.isNullOrBlank()
+    if (hasReleaseKey) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
+    } else {
+        logger.warn("No release keystore configured: :app-tv:assembleRelease will produce an UNSIGNED APK.")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -139,6 +157,8 @@ dependencies {
     // Local DB
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    // Background update checks
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(libs.junit)
 }

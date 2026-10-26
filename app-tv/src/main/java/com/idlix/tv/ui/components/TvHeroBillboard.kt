@@ -120,7 +120,7 @@ fun TvHeroBillboard(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(480.dp)
-                .padding(start = 24.dp, top = 24.dp, bottom = 20.dp),
+                .padding(start = 48.dp, top = 24.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.Bottom
         ) {
             // Title
@@ -133,12 +133,12 @@ fun TvHeroBillboard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Metadata Badges (Rating, Year, Quality)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (movie.formattedRating != "N/A") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -152,7 +152,7 @@ fun TvHeroBillboard(
                         Text(
                             text = "${movie.formattedRating} / 10",
                             color = NetflixWhite,
-                            fontSize = 12.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -162,7 +162,7 @@ fun TvHeroBillboard(
                     Text(
                         text = year,
                         color = NetflixLightGray,
-                        fontSize = 12.sp
+                        fontSize = 14.sp
                     )
                 }
 
@@ -175,18 +175,18 @@ fun TvHeroBillboard(
                         Text(
                             text = q,
                             color = NetflixWhite,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Action Buttons
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Button(
                     onClick = onPlayClick,
@@ -211,7 +211,7 @@ fun TvHeroBillboard(
                         Text(
                             text = stringResource(R.string.play),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            fontSize = 16.sp
                         )
                     }
                 }
@@ -238,7 +238,7 @@ fun TvHeroBillboard(
                         Text(
                             text = stringResource(R.string.more_info),
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                            fontSize = 16.sp
                         )
                     }
                 }

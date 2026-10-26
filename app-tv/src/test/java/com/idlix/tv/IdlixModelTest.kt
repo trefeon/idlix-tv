@@ -1,15 +1,14 @@
 package com.idlix.tv
 
-import com.idlix.data.api.ApiClient
-import com.idlix.data.model.ClaimResponse
 import com.idlix.data.model.MovieListResponse
-import com.idlix.data.model.PlayInfoResponse
-import com.idlix.data.model.RedeemResponse
+import com.idlix.data.model.ResolvedPlayback
 import com.idlix.data.model.SearchResponse
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import com.idlix.data.model.SeriesItem
+import com.idlix.data.net.CoreHttp
+import com.idlix.data.net.IdlixDomainResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdlixModelTest {
@@ -42,7 +41,7 @@ class IdlixModelTest {
         }
         """.trimIndent()
 
-        val parsed = ApiClient.json.decodeFromString<MovieListResponse>(sampleJson)
+        val parsed = CoreHttp.json.decodeFromString<MovieListResponse>(sampleJson)
         assertEquals(1, parsed.data.size)
         val movie = parsed.data[0]
         assertEquals("Fuori", movie.title)
@@ -84,7 +83,7 @@ class IdlixModelTest {
         }
         """.trimIndent()
 
-        val searchResponse = ApiClient.json.decodeFromString<SearchResponse>(searchJson)
+        val searchResponse = CoreHttp.json.decodeFromString<SearchResponse>(searchJson)
         assertEquals(1, searchResponse.results.size)
         val item = searchResponse.results[0]
         assertEquals("The Batman", item.title)
@@ -95,95 +94,16 @@ class IdlixModelTest {
     }
 
     @Test
-    fun testRealLiveSearchApi() = kotlinx.coroutines.runBlocking {
-        if (System.getenv("RUN_LIVE_TESTS") != "true") {
-            println("Skipping live search test (set RUN_LIVE_TESTS=true to run against live backend)")
-            return@runBlocking
-        }
-        try {
-            val repo = com.idlix.data.repository.IdlixRepository()
-            val results = repo.search("Reacher")
-            println("Live Search 'Reacher' returned ${results.size} items")
-            if (results.isNotEmpty()) {
-                val first = results[0]
-                println("First item: ${first.title} (${first.contentType}) - ${first.slug}")
-                org.junit.Assert.assertTrue(first.title.isNotBlank())
-            }
-        } catch (e: Exception) {
-            println("Live search test note: ${e.message}")
-        }
-    }
-
-    @Test
-    fun testPlayInfoAndClaimDeserialization() {
-        val playInfoJson = """
-        {
-          "kind": "gate",
-          "gateToken": "sample_gate_jwt",
-          "serverNow": 1792580280608,
-          "unlockAt": 1792580295608,
-          "viewerTier": "guest",
-          "maxHeight": 720,
-          "preroll": {"ad": {"name": "GamblingAd"}}
-        }
-        """.trimIndent()
-
-        val playInfo = ApiClient.json.decodeFromString<PlayInfoResponse>(playInfoJson)
-        assertEquals("sample_gate_jwt", playInfo.gateToken)
-        assertEquals(1792580295608L, playInfo.unlockAt)
-
-        val claimJson = """
-        {
-          "kind": "pentos",
-          "claim": "sample_claim_jwt",
-          "claimExpiresAt": 1792585991,
-          "redeemUrl": "https://e2e.majorplay.net/api/play",
-          "videoId": "vkkj-VpTuVxK",
-          "title": "Selfless (2015)",
-          "durationSec": 7015,
-          "viewerTier": "guest",
-          "maxHeight": 720,
-          "qualityLadder": [720]
-        }
-        """.trimIndent()
-
-        val claim = ApiClient.json.decodeFromString<ClaimResponse>(claimJson)
-        assertEquals("vkkj-VpTuVxK", claim.videoId)
-        assertEquals("https://e2e.majorplay.net/api/play", claim.redeemUrl)
-
-        val redeemJson = """
-        {
-          "code": "ok",
-          "url": "https://e2e.majorplay.net/v/z4/vkkj/config-310070.json",
-          "expiresAt": 1792583896,
-          "subtitles": [
-            {
-              "lang": "id",
-              "label": "Indonesian",
-              "path": "https://e2e.majorplay.net/v/z4/sub.vtt"
-            }
-          ]
-        }
-        """.trimIndent()
-
-        val redeem = ApiClient.json.decodeFromString<RedeemResponse>(redeemJson)
-        assertEquals("ok", redeem.code)
-        assertEquals(1, redeem.subtitles.size)
-        assertEquals("id", redeem.subtitles[0].lang)
-        assertEquals("https://e2e.majorplay.net/v/z4/sub.vtt", redeem.subtitles[0].path)
-    }
-
-    @Test
     fun testResolvedPlaybackDeserialization() {
         val sampleJson = """
         {
           "title": "Hope (2026)",
-          "hlsMasterUrl": "https://e2e.majorplay.net/v/z4/master.m3u8",
+          "hlsMasterUrl": "https://cdn.example.com/v/z4/master.m3u8",
           "subtitles": [
             {
               "lang": "id",
               "label": "Indonesian",
-              "path": "https://e2e.majorplay.net/v/z4/sub_id.vtt"
+              "path": "https://cdn.example.com/v/z4/sub_id.vtt"
             }
           ],
           "durationSec": 7200,
@@ -191,45 +111,40 @@ class IdlixModelTest {
         }
         """.trimIndent()
 
-        val parsed = ApiClient.json.decodeFromString<com.idlix.data.model.ResolvedPlayback>(sampleJson)
+        val parsed = CoreHttp.json.decodeFromString<ResolvedPlayback>(sampleJson)
+        assertNotNull(parsed)
         assertEquals("Hope (2026)", parsed.title)
-        assertEquals("https://e2e.majorplay.net/v/z4/master.m3u8", parsed.hlsMasterUrl)
+        assertEquals("https://cdn.example.com/v/z4/master.m3u8", parsed.hlsMasterUrl)
         assertEquals(1, parsed.subtitles.size)
         assertEquals("id", parsed.subtitles[0].lang)
         assertEquals(7200, parsed.durationSec)
     }
 
     @Test
-    fun testRealResolveStreamPlayback() = kotlinx.coroutines.runBlocking {
-        if (System.getenv("RUN_LIVE_TESTS") != "true") {
-            println("Skipping live stream resolution test (set RUN_LIVE_TESTS=true to run against live backend)")
-            return@runBlocking
-        }
-        try {
-            val repo = com.idlix.data.repository.IdlixRepository()
-            val movieId = "859b0000-7e53-4bfc-9dc5-a45d8940adbd"
-            println("Resolving stream for Hope ($movieId)...")
-            var lastCountdown = -1
-            val res = repo.resolveStream(
-                contentType = "movie",
-                contentId = movieId,
-                contentTitle = "Hope",
-                onCountdown = { sec ->
-                    if (sec != lastCountdown) {
-                        println("Countdown: ${sec}s")
-                        lastCountdown = sec
-                    }
-                }
-            )
+    fun testResolverDrivenRefererAndOrigin() {
+        // Consumers must derive Referer/Origin from the resolver at runtime —
+        // never hardcode a mirror literal. Offline: uses the default flow value.
+        val origin = IdlixDomainResolver.origin()
+        val referer = IdlixDomainResolver.referer()
+        assertTrue(origin.startsWith("https://"))
+        assertTrue(!origin.endsWith("/"))
+        assertTrue(referer.startsWith("https://"))
+        assertTrue(referer.endsWith("/"))
+        assertEquals("$origin/", referer)
+    }
 
-            if (res.isSuccess) {
-                val playback = res.getOrNull()
-                assertNotNull(playback)
-                println("SUCCESS! HLS Master Playlist: ${playback?.hlsMasterUrl}")
-                org.junit.Assert.assertTrue(playback!!.hlsMasterUrl.startsWith("http"))
-            }
-        } catch (e: Exception) {
-            println("Skipping live playback test (backend not reachable in unit test env: ${e.message})")
-        }
+    @Test
+    fun testResolverFallbackBearsIdlixHost() {
+        val base = IdlixDomainResolver.currentBaseUrl()
+        assertTrue(base.startsWith("https://"))
+        assertTrue(base.contains("idlix"))
+    }
+
+    @Test
+    fun testSeriesItemHelpers() {
+        val item = SeriesItem(id = "s1", title = "BB", posterPath = "/p.jpg", voteAverage = "9.5")
+        assertEquals("https://image.tmdb.org/t/p/w342/p.jpg", item.fullPosterUrl)
+        assertEquals("9.5", item.formattedRating)
+        assertEquals("tv_series", item.toMovieItem().contentType)
     }
 }

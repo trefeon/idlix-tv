@@ -95,7 +95,7 @@ fun TvNextEpisodePrompt(
                 .width(360.dp)
                 .background(NetflixDarkCard.copy(alpha = 0.96f), RoundedCornerShape(12.dp))
                 .border(BorderStroke(2.dp, NetflixRed), RoundedCornerShape(12.dp))
-                .padding(16.dp)
+                .padding(24.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Header Row: Badge & Countdown
@@ -112,7 +112,7 @@ fun TvNextEpisodePrompt(
                         Text(
                             text = stringResource(R.string.next_episode).uppercase(),
                             color = NetflixWhite,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -121,19 +121,19 @@ fun TvNextEpisodePrompt(
                         Text(
                             text = stringResource(R.string.next_episode_in_seconds, remainingSeconds),
                             color = NetflixLightGray,
-                            fontSize = 11.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Series & Episode Details
                 Text(
                     text = "S${nextEpisode.seasonNumber}:E${nextEpisode.episode.episodeNumber} - ${nextEpisode.episode.name}",
                     color = NetflixWhite,
-                    fontSize = 15.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -144,13 +144,13 @@ fun TvNextEpisodePrompt(
                     Text(
                         text = nextEpisode.seriesTitle,
                         color = NetflixLightGray,
-                        fontSize = 12.sp,
+                        fontSize = 14.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Action Buttons: Play Next & Dismiss
                 Row(
@@ -178,7 +178,7 @@ fun TvNextEpisodePrompt(
                                 }
                             } else false
                         },
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
@@ -194,7 +194,7 @@ fun TvNextEpisodePrompt(
                         border = ButtonDefaults.border(
                             focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
                         ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                         modifier = Modifier
                             .weight(1f)
                             .focusRequester(playNextFocusRequester)
@@ -215,7 +215,7 @@ fun TvNextEpisodePrompt(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = stringResource(R.string.play_next_episode),
-                                fontSize = 12.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -234,7 +234,7 @@ fun TvNextEpisodePrompt(
                         border = ButtonDefaults.border(
                             focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                         modifier = Modifier
                             .focusRequester(dismissFocusRequester)
                             .onFocusChanged { if (it.isFocused) isDismissFocused = true }
@@ -254,7 +254,7 @@ fun TvNextEpisodePrompt(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = stringResource(R.string.dismiss),
-                                fontSize = 12.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }

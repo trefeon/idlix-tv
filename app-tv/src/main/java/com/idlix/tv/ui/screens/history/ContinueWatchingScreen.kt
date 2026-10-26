@@ -66,7 +66,7 @@ fun ContinueWatchingScreen(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
-            .padding(horizontal = 28.dp, vertical = 20.dp)
+            .padding(horizontal = 48.dp, vertical = 20.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header
@@ -90,7 +90,7 @@ fun ContinueWatchingScreen(
                             stringResource(R.string.continue_watching_subtitle)
                         },
                         color = NetflixLightGray,
-                        fontSize = 12.sp
+                        fontSize = 14.sp
                     )
                 }
 
@@ -116,12 +116,12 @@ fun ContinueWatchingScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = stringResource(R.string.clear_all), fontSize = 12.sp)
+                        Text(text = stringResource(R.string.clear_all), fontSize = 14.sp)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             if (uiState.items.isEmpty()) {
                 // Empty state
@@ -152,7 +152,7 @@ fun ContinueWatchingScreen(
                         Text(
                             text = stringResource(R.string.no_history_desc),
                             color = NetflixLightGray,
-                            fontSize = 13.sp
+                            fontSize = 14.sp
                         )
                         Spacer(modifier = Modifier.height(18.dp))
                         Button(
@@ -177,8 +177,8 @@ fun ContinueWatchingScreen(
                 TvLazyVerticalGrid(
                     columns = TvGridCells.Adaptive(230.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
                     modifier = Modifier
                         .fillMaxSize()
                         .weight(1f)
@@ -203,11 +203,11 @@ fun ContinueWatchingScreen(
                                 height = 140
                             )
 
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Row(
                                 modifier = Modifier.width(230.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Button(
                                     onClick = {
@@ -239,7 +239,7 @@ fun ContinueWatchingScreen(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text(text = stringResource(R.string.play), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(text = stringResource(R.string.play), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                 }
 
                                 Button(

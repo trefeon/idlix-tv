@@ -1,0 +1,9 @@
+# Copy to local.properties and fill in real values. NEVER commit local.properties.
+# Release signing (all required for ./gradlew :app-tv:assembleRelease / :app-mobile:assembleRelease)
+storeFile=/absolute/path/to/upload-keystore.jks
+storePassword=CHANGE_ME
+keyAlias=CHANGE_ME
+keyPassword=CHANGE_ME
+
+# SubDL subtitle API key (third-party, direct). Get one at https://subdl.com/api-docs
+subdlApiKey=CHANGE_ME

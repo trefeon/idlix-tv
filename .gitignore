@@ -55,17 +55,6 @@ captures/
 .cxx/
 
 # ==========================================
-# Backend & Node.js Artifacts
-# ==========================================
-node_modules/
-**/node_modules/
-dist/
-**/dist/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# ==========================================
 # AI Agents & Local Tooling Cache
 # ==========================================
 .agents/

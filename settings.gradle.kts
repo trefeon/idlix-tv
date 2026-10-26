@@ -20,7 +20,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "IdlixTV"
+rootProject.name = "idlix-tv"
 include(":core:data")
 include(":app-tv")
 include(":app-mobile")

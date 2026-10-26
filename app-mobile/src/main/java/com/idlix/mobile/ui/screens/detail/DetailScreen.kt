@@ -71,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.idlix.data.model.CastMember
 import com.idlix.data.model.EpisodeItem
+import com.idlix.data.net.IdlixDomainResolver
 import com.idlix.mobile.R
 import com.idlix.mobile.ui.screens.detail.components.MobilePlayerView
 import com.idlix.mobile.ui.screens.detail.components.SubtitleModalBottomSheet
@@ -416,7 +417,7 @@ fun DetailScreen(
                                         .clickable {
                                             val sendIntent = Intent().apply {
                                                 action = Intent.ACTION_SEND
-                                                putExtra(Intent.EXTRA_TEXT, "Watch $title on IDLIX: https://idlixku.com/$contentType/$slug")
+                                                putExtra(Intent.EXTRA_TEXT, "Watch $title on IDLIX: ${IdlixDomainResolver.currentBaseUrl().trimEnd('/')}/$contentType/$slug")
                                                 type = "text/plain"
                                             }
                                             context.startActivity(Intent.createChooser(sendIntent, "Share"))

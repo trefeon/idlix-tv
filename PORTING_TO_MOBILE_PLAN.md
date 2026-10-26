@@ -1,3 +1,7 @@
+> **ARCHIVED — rencana ini sudah dilaksanakan (multi-module `:core:data` + `:app-tv` + `:app-mobile` selesai).**
+> Disimpan sebagai arsip arsitektur. Koreksi: tidak ada lagi layanan scraper/proxy self-hosted — sumber katalog
+> adalah resolver redirect-follow `https://idlix.net/` di `core/data`, dan SubDL key via `local.properties`/env.
+
 # Arsitektur Multi-Module: Penyatuan Idlix TV & Idlix Mobile dalam Satu Project
 
 Dokumen ini merinci rencana transformasi arsitektur dari *Single Module* (`:app`) menjadi **Multi-Module Project** yang menampung aplikasi **Android TV** dan **Android Mobile** secara berdampingan tanpa saling mengganggu, dengan berbagi logika data (*shared core*).
@@ -6,7 +10,7 @@ Dokumen ini merinci rencana transformasi arsitektur dari *Single Module* (`:app`
 
 ## 1. Mengapa Multi-Module?
 
-1. **Zero Code Duplication**: Logika koneksi API backend ([`ApiClient`](file:///Users/abdi/Documents/Personal%20Workspace/Idlix%20for%20TV/app/src/main/java/com/idlix/tv/data/api/ApiClient.kt), [`IdlixApiService`](file:///Users/abdi/Documents/Personal%20Workspace/Idlix%20for%20TV/app/src/main/java/com/idlix/tv/data/api/IdlixApiService.kt)), data model ([`Movie`](file:///Users/abdi/Documents/Personal%20Workspace/Idlix%20for%20TV/app/src/main/java/com/idlix/tv/data/model/Movie.kt), [`Series`](file:///Users/abdi/Documents/Personal%20Workspace/Idlix%20for%20TV/app/src/main/java/com/idlix/tv/data/model/Series.kt), [`PlayInfo`](file:///Users/abdi/Documents/Personal%20Workspace/Idlix%20for%20TV/app/src/main/java/com/idlix/tv/data/model/PlayInfo.kt)), deserializer, dan repository dikelola di satu tempat.
+1. **Zero Code Duplication**: Logika koneksi API (`ApiClient` di `app/src/main/java/com/idlix/tv/data/api/ApiClient.kt`, `IdlixApiService` di `app/src/main/java/com/idlix/tv/data/api/IdlixApiService.kt`), data model (`Movie` di `app/src/main/java/com/idlix/tv/data/model/Movie.kt`, `Series` di `app/src/main/java/com/idlix/tv/data/model/Series.kt`, `PlayInfo` di `app/src/main/java/com/idlix/tv/data/model/PlayInfo.kt`), deserializer, dan repository dikelola di satu tempat.
 2. **Isolasi Dependensi UI**:
    - Modul TV menggunakan library `androidx.tv:tv-material` & `tv-foundation`.
    - Modul Mobile menggunakan library `androidx.compose.material3:material3`.
@@ -277,7 +281,7 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 
 ### 2. `settings.gradle.kts`
 ```kotlin
-rootProject.name = "Idlix"
+rootProject.name = "idlix-tv"
 
 include(":core:data")
 include(":app-tv")
@@ -299,8 +303,8 @@ android {
     defaultConfig {
         minSdk = 24
         
-        val backendUrl = "https://streamapi.abdiworks.my.id/"
-        buildConfigField("String", "BACKEND_API_URL", "\"$backendUrl\"")
+        // Sumber katalog: resolver redirect-follow https://idlix.net/ di runtime (tanpa URL backend statis).
+        // SubDL key (third-party, api.subdl.com) via local.properties/env — tanpa default bawaan.
     }
 
     compileOptions {

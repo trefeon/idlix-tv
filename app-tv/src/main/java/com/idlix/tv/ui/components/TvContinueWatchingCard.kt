@@ -84,7 +84,7 @@ fun TvContinueWatchingCard(
             .width(width.dp)
             .height(height.dp)
             .onFocusChanged { isFocused = it.isFocused },
-        scale = CardDefaults.scale(focusedScale = 1.0f),
+        scale = CardDefaults.scale(focusedScale = 1.08f),
         glow = CardDefaults.glow(focusedGlow = Glow.None),
         shape = CardDefaults.shape(shape = ContinueCardShape),
         border = CardDefaults.border(
@@ -137,12 +137,12 @@ fun TvContinueWatchingCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomStart)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = item.title,
                     color = NetflixWhite,
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -159,13 +159,13 @@ fun TvContinueWatchingCard(
                     Text(
                         text = subtitle,
                         color = NetflixLightGray,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Progress Bar (Netflix Red)
                 Box(

@@ -148,7 +148,7 @@ fun DetailScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 28.dp, vertical = 20.dp),
+                                .padding(horizontal = 48.dp, vertical = 20.dp),
                             verticalArrangement = Arrangement.Bottom
                         ) {
                             Text(
@@ -176,18 +176,18 @@ fun DetailScreen(
                                         Text(
                                             text = "$rating / 10",
                                             color = NetflixWhite,
-                                            fontSize = 12.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
 
                                 if (year.isNotBlank()) {
-                                    Text(text = year, color = NetflixLightGray, fontSize = 12.sp)
+                                    Text(text = year, color = NetflixLightGray, fontSize = 14.sp)
                                 }
 
                                 if (genres.isNotBlank()) {
-                                    Text(text = genres, color = NetflixLightGray, fontSize = 12.sp)
+                                    Text(text = genres, color = NetflixLightGray, fontSize = 14.sp)
                                 }
                             }
 
@@ -196,7 +196,7 @@ fun DetailScreen(
                             Text(
                                 text = overview,
                                 color = NetflixLightGray,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.width(600.dp)
@@ -254,7 +254,8 @@ fun DetailScreen(
                                     } else {
                                         stringResource(R.string.play_episode_1)
                                     },
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
                                 )
                             }
                         }
@@ -264,7 +265,7 @@ fun DetailScreen(
                 // If Series: Season selector & Episode list
                 if (contentType == "tv_series" && uiState.series != null) {
                     item {
-                        Column(modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
                             Text(
                                 text = stringResource(R.string.select_season_episode),
                                 color = NetflixWhite,
@@ -308,7 +309,7 @@ fun DetailScreen(
                                 }
                             } else {
                                 TvLazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
                                     items(uiState.episodes, key = { it.id }) { ep ->
                                         TvEpisodeCard(
@@ -336,7 +337,7 @@ fun DetailScreen(
                 // Cast list
                 if (castList.isNotEmpty()) {
                     item {
-                        Column(modifier = Modifier.padding(start = 28.dp, top = 16.dp, bottom = 32.dp)) {
+                        Column(modifier = Modifier.padding(start = 48.dp, top = 16.dp, bottom = 32.dp)) {
                             Text(
                                 text = stringResource(R.string.cast),
                                 color = NetflixWhite,
@@ -405,7 +406,7 @@ fun TvEpisodeCard(
                     Text(
                         text = stringResource(R.string.episode_badge, episode.episodeNumber),
                         color = NetflixWhite,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -415,7 +416,7 @@ fun TvEpisodeCard(
                 Text(
                     text = "${episode.episodeNumber}. ${episode.name}",
                     color = NetflixWhite,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -424,7 +425,7 @@ fun TvEpisodeCard(
                 Text(
                     text = episode.overview ?: "",
                     color = NetflixLightGray,
-                    fontSize = 9.sp,
+                    fontSize = 12.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -472,7 +473,7 @@ fun TvCastCard(cast: CastMember) {
             Text(
                 text = cast.name,
                 color = NetflixWhite,
-                fontSize = 11.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -480,7 +481,7 @@ fun TvCastCard(cast: CastMember) {
             Text(
                 text = cast.character ?: "",
                 color = NetflixLightGray,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

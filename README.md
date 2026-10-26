@@ -1,16 +1,13 @@
 # IDLIX: Android TV & Android Mobile 🎬📺📱
 
-<p align="center">
-  <img src="https://cdn.abdilah.id/uploads/com.idlix.tv_and_com.idlix.mobile-preview.png">
-</p>
-
 A modern, high-performance, **100% native Android streaming platform** for movies and TV series from IDLIX with multi-platform support (Android TV & Android Mobile) built using a unified **Multi-Module Architecture**.
 
 Project ini terbagi menjadi modul-modul independen yang saling melengkapi:
-1. **Shared Core Data (`core/data/`)**: Modul library Kotlin murni tanpa dependensi UI yang mengelola Retrofit client, model data, deserializer toleran, repository, dan penyimpanan riwayat tontonan lokal (`WatchHistoryStore`).
+1. **Shared Core Data (`core/data/`)**: Modul library Kotlin murni tanpa dependensi UI yang mengelola Retrofit client, redirect-follow resolver mirror IDLIX, model data, deserializer toleran, repository, dan penyimpanan riwayat tontonan lokal (`WatchHistoryStore`).
 2. **Android TV Client (`app-tv/`)**: Aplikasi khusus Android TV/Google TV berbasis Jetpack Compose for TV (`androidx.tv.material3`) dan Media3 ExoPlayer dengan antarmuka Leanback (remote D-Pad, 10-foot UI, fixed landscape).
 3. **Android Mobile Client (`app-mobile/`)**: Aplikasi khusus smartphone & tablet berbasis Jetpack Compose **Material 3** modern (Bottom Navigation Bar, Swipeable Banner Pager, Inline-to-Fullscreen Player, Touch Gestures, dan **Picture-in-Picture**).
-4. **Backend API Scraper & Proxy (`Backend API/`)**: Service Fastify TypeScript dengan headless stealth browser untuk bypass Cloudflare Turnstile, scraping katalog, dan resolusi one-shot token HLS stream.
+
+> **Sumber katalog**: canonical source `https://idlix.net/` — aplikasi mengikuti redirect (302 `Location`) ke mirror aktif saat ini dan menurunkan Referer/Origin/URL redeem dari base hasil resolve saat runtime. Tidak ada server self-hosted, tidak ada VPS, tidak ada port lokal yang perlu dijalankan.
 
 ---
 
@@ -35,7 +32,7 @@ Project ini terbagi menjadi modul-modul independen yang saling melengkapi:
 * **Picture-in-Picture (PiP)**:
   * Otomatis masuk ke mode floating PiP saat pengguna menekan Home atau beralih ke aplikasi lain (`onUserLeaveHint`).
 * **Integrasi Subtitle SubDL**:
-  * Pemilihan trek subtitle bawaan atau pencarian subtitle Bahasa Indonesia/Inggris via SubDL API.
+  * Pemilihan trek subtitle bawaan atau pencarian subtitle Bahasa Indonesia/Inggris via SubDL API (api.subdl.com, key milik pengguna via `local.properties`/env — tanpa default bawaan).
 
 ### 📺 Android TV Client (`app-tv`)
 * **100% Native Architecture**: Bebas Chromium dan WebView di dalam APK. Menggunakan hardware decoder bawaan TV (`MediaCodec`) via AndroidX Media3 ExoPlayer.
@@ -51,27 +48,20 @@ Project ini terbagi menjadi modul-modul independen yang saling melengkapi:
   * Subtitle internal IDLIX otomatis (Indonesian & English).
   * Integrasi third-party SubDL.com untuk pencarian dan pengunduhan subtitle alternatif langsung dari player remote TV.
 * **Menu Pengaturan Terintegrasi (In-App Settings)**:
-  * Pengaturan alamat Backend API langsung dari layar TV menggunakan remote D-pad.
-  * Pengaturan custom API Key SubDL & tombol Uji Koneksi *real-time*.
+  * Pengaturan custom API Key SubDL & tombol Uji Koneksi *real-time* langsung dari layar TV menggunakan remote D-pad.
 * **Bilingual Localization**:
   * Mendukung penuh Bahasa Indonesia (`id`/`in`) dan English (`en`). Otomatis mengikuti bahasa sistem TV.
-
-### 🚀 Backend API Service
-* **Cloudflare Turnstile & Challenge Bypass**: Stealth browser otomatis menyelesaikan proteksi Cloudflare di sisi server.
-* **In-Memory LRU Caching**: Respons data instan (<15ms) untuk katalog film, serial, dan kategori.
-* **All-in-One Playback Resolver**: Endpoint `/api/playback/resolve` menyelesaikan siklus `gateToken`, countdown timer provider (15 detik), session claim, dan HLS URL redemption dalam satu panggilan.
-* **Ringan & Hemat Resource**: Mendukung Docker dengan batas memori <1GB, ideal dijalankan pada VPS murah (1–2GB RAM) atau komputer lokal.
 
 ---
 
 ## 📁 Struktur Direktori Multi-Module (Project Structure)
 
 ```
-Idlix for TV/
+idlix-tv/
 ├── core/
-│   └── data/                            # [Shared Library] Model, API Retrofit, Repository & DB
+│   └── data/                            # [Shared Library] Resolver, HTTP, Repository & DB
 │       ├── src/main/java/com/idlix/data/
-│       │   ├── api/                     # ApiClient (Universal), IdlixApiService, MajorplayApiService
+│       │   ├── net/                     # CoreHttp, IdlixDomainResolver (idlix.net redirect-follow)
 │       │   ├── local/                   # WatchHistoryStore (penyimpanan riwayat tontonan)
 │       │   ├── model/                   # MovieItem, SeriesItem, Subdl, Serializers
 │       │   └── repository/              # IdlixRepository & SubdlRepository
@@ -97,42 +87,36 @@ Idlix for TV/
 │   │   └── res/                         # Asset mobile & strings
 │   └── build.gradle.kts
 │
-├── Backend API/                         # Service Backend Scraper & Cache (Node.js/Docker)
-│   ├── src/
-│   │   ├── engine/                      # Playwright Stealth Scraper & Token Resolver
-│   │   ├── routes/                      # REST endpoints Fastify (/api/...)
-│   │   └── services/                    # CacheService (LRU memory cache)
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── package.json
-│
 ├── gradle/                              # Gradle wrapper & version catalogs (libs.versions.toml)
 ├── build.gradle.kts
 ├── settings.gradle.kts
 ├── gradle.properties
-├── local.properties                     # Konfigurasi lokal Android SDK & API URL (git-ignored)
-└── PORTING_TO_MOBILE_PLAN.md            # Rencana arsitektur & roadmap implementasi teknis
+├── local.properties                     # Konfigurasi lokal: Android SDK + signing + SubDL key (git-ignored)
+└── PORTING_TO_MOBILE_PLAN.md            # Rencana arsitektur & roadmap implementasi teknis (arsip)
 ```
 
 ---
 
 ## 🛠️ Panduan Memulai & Kompilasi APK (Build Guide)
 
-### 1. Menjalankan Backend API
+Tidak ada backend yang perlu dijalankan — aplikasi menyelesaikan mirror IDLIX langsung dari `https://idlix.net/` saat runtime.
 
-Backend API wajib berjalan agar aplikasi Android TV dan Mobile dapat mengambil katalog film dan streaming video.
+### 1. Konfigurasi `local.properties`
 
-#### Menggunakan Docker / Podman (Direkomendasikan)
-```bash
-cd "Backend API"
-docker compose up -d --build
+Salin contoh dan isi nilai lokal Anda (file ini git-ignored, jangan commit):
+
+```properties
+sdk.dir=/path/ke/Android/Sdk
+storeFile=/path/ke/upload-keystore.jks
+storePassword=***
+keyAlias=***
+keyPassword=***
+subdlApiKey=***
 ```
-Cek apakah server sudah aktif:
-```bash
-curl http://localhost:5376/health
-```
 
----
+* `sdk.dir` — lokasi Android SDK.
+* `storeFile` / `storePassword` / `keyAlias` / `keyPassword` — signing release (wajib untuk `assembleRelease`; tanpa ini build release gagal dengan pesan yang jelas).
+* `subdlApiKey` — API key SubDL pribadi (https://api.subdl.com) untuk subtitle pihak ketiga. Tanpa key ini, subtitle bawaan IDLIX tetap berfungsi; hanya pencarian SubDL yang nonaktif.
 
 ### 2. Membangun APK Android TV (`app-tv`)
 
@@ -173,11 +157,11 @@ adb -s 192.168.x.tv:5555 install -r app-tv/build/outputs/apk/debug/app-tv-debug.
 # Cek ID perangkat mobile
 adb devices
 
-# Install ke perangkat target (contoh: Wi-Fi TLS / USB device)
-adb -s "adb-DELFOVPBBQPFDIA6-W6Rq2R._adb-tls-connect._tcp" install -r app-mobile/build/outputs/apk/debug/app-mobile-debug.apk
+# Install ke perangkat target
+adb -s <device-id> install -r app-mobile/build/outputs/apk/debug/app-mobile-debug.apk
 
 # Jalankan aplikasi mobile
-adb -s "adb-DELFOVPBBQPFDIA6-W6Rq2R._adb-tls-connect._tcp" shell am start -n com.idlix.mobile.debug/com.idlix.mobile.MainActivity
+adb -s <device-id> shell am start -n com.idlix.mobile.debug/com.idlix.mobile.MainActivity
 ```
 
 > **Catatan untuk Perangkat Xiaomi / MIUI / HyperOS**:
@@ -187,11 +171,11 @@ adb -s "adb-DELFOVPBBQPFDIA6-W6Rq2R._adb-tls-connect._tcp" shell am start -n com
 
 ## Download Release Apk
 
-Look at this [page](https://github.com/samdgea/idlix-androidtv/releases).
+Look at this [page](https://github.com/trefeon/idlix-tv/releases).
 
 ---
 
 ## 🔒 Keamanan & Lisensi
 
-* File sensitif seperti `local.properties`, sertifikat signing keystore (`*.jks`), dan credential environment dilindungi di [`.gitignore`](file:///Users/abdi/Documents/Personal%20Workspace/Idlix%20for%20TV/.gitignore).
+* File sensitif seperti `local.properties`, sertifikat signing keystore (`*.jks`), dan credential environment dilindungi di [`./.gitignore`](./.gitignore).
 * Proyek ini dibuat untuk keperluan edukasi dan riset arsitektur multi-module Android Native (TV & Mobile) serta streaming HLS.

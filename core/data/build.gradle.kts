@@ -21,8 +21,10 @@ android {
     defaultConfig {
         minSdk = 24
 
-        val backendUrl = localProperties.getProperty("backendApiUrl") ?: "https://streamapi.abdiworks.my.id/"
-        buildConfigField("String", "BACKEND_API_URL", "\"$backendUrl\"")
+        val subdlApiKey = localProperties.getProperty("subdlApiKey")
+            ?: System.getenv("SUBDL_API_KEY")
+            ?: ""
+        buildConfigField("String", "SUBDL_API_KEY", "\"$subdlApiKey\"")
     }
 
     compileOptions {
@@ -43,9 +45,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
-    // Network & Serialization
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.kotlinx.serialization)
+    // Network & Serialization (shared via CoreHttp; SubDL + Coil share okHttp)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)

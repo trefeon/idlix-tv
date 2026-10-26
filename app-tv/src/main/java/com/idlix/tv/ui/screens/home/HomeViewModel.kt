@@ -7,16 +7,13 @@ import com.idlix.data.local.WatchHistoryStore
 import com.idlix.data.model.MovieItem
 import com.idlix.data.model.SeriesItem
 import com.idlix.data.model.WatchHistoryItem
-import com.idlix.data.repository.IdlixRepository
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val heroMovie: MovieItem? = null,
     val continueWatching: List<WatchHistoryItem> = emptyList(),
     val trending: List<MovieItem> = emptyList(),
@@ -30,10 +27,9 @@ class HomeViewModel(
     application: Application
 ) : AndroidViewModel(application) {
 
-    private val repository = IdlixRepository()
     private val historyStore = WatchHistoryStore.getInstance(application.applicationContext)
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(HomeUiState(isLoading = false))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
@@ -49,38 +45,17 @@ class HomeViewModel(
 
     fun loadHomeData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                coroutineScope {
-                    val trendingDeferred = async { repository.getTrendingMovies() }
-                    val popularDeferred = async { repository.getPopularMovies() }
-                    val seriesDeferred = async { repository.getPopularSeries() }
-                    val actionDeferred = async { repository.getMoviesByGenre("action") }
-
-                    val trending = trendingDeferred.await()
-                    val popular = popularDeferred.await()
-                    val series = seriesDeferred.await()
-                    val action = actionDeferred.await()
-                    val unfinished = historyStore.getUnfinishedItems()
-
-                    val hero = trending.firstOrNull() ?: popular.firstOrNull()
-
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        heroMovie = hero,
-                        continueWatching = unfinished,
-                        trending = trending,
-                        popularMovies = popular,
-                        popularSeries = series,
-                        actionMovies = action
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.localizedMessage ?: "Terjadi kesalahan saat memuat data"
-                )
-            }
+            val unfinished = historyStore.getUnfinishedItems()
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                heroMovie = null,
+                continueWatching = unfinished,
+                trending = emptyList(),
+                popularMovies = emptyList(),
+                popularSeries = emptyList(),
+                actionMovies = emptyList(),
+                error = null
+            )
         }
     }
 

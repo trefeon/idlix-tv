@@ -3,10 +3,11 @@ package com.idlix.data.repository
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.idlix.data.api.ApiClient
+import com.idlix.data.BuildConfig
 import com.idlix.data.model.SubdlResponse
 import com.idlix.data.model.SubdlSubtitle
 import com.idlix.data.model.SubtitleTrack
+import com.idlix.data.net.CoreHttp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -15,24 +16,42 @@ import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.util.zip.ZipInputStream
 
+/**
+ * Third-party SubDL subtitle source (api.subdl.com), decoupled from the deleted
+ * backend client.
+ *
+ * Own HTTP via [CoreHttp], own prefs file `subdl_config`. API key comes from
+ * `local.properties` (`subdlApiKey`) / env `SUBDL_API_KEY` via
+ * `BuildConfig.SUBDL_API_KEY` with an empty default — no checked-in key.
+ */
 object SubdlRepository {
     private const val TAG = "SubdlRepository"
+    private const val PREFS_NAME = "subdl_config"
     private const val PREF_KEY_SUBDL_API_KEY = "custom_subdl_api_key"
-    const val DEFAULT_API_KEY = "subdl__VuGBV3ExlH8tW68l4wVEIsk6Mfnaxq1_FiONFN8Yg0"
     private const val BASE_URL = "https://api.subdl.com/api/v1/subtitles"
 
     @Volatile
     private var currentApiKey: String? = null
 
+    private fun prefs(context: Context? = CoreHttp.applicationContext) =
+        context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
     fun getApiKey(): String {
         currentApiKey?.let { return it }
         val saved = try {
-            val prefs = ApiClient.applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
-            prefs?.getString(PREF_KEY_SUBDL_API_KEY, null)
+            prefs()?.getString(PREF_KEY_SUBDL_API_KEY, null)
         } catch (_: Exception) {
             null
         }
-        val key = if (!saved.isNullOrBlank()) saved else DEFAULT_API_KEY
+        val key = if (!saved.isNullOrBlank()) {
+            saved
+        } else {
+            try {
+                BuildConfig.SUBDL_API_KEY
+            } catch (_: Exception) {
+                ""
+            }
+        }
         currentApiKey = key
         return key
     }
@@ -41,8 +60,7 @@ object SubdlRepository {
         val trimmed = newKey.trim()
         currentApiKey = trimmed
         try {
-            val prefs = ApiClient.applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
-            prefs?.edit()?.putString(PREF_KEY_SUBDL_API_KEY, trimmed)?.apply()
+            prefs()?.edit()?.putString(PREF_KEY_SUBDL_API_KEY, trimmed)?.apply()
         } catch (_: Exception) {}
     }
 
@@ -57,6 +75,10 @@ object SubdlRepository {
     ): List<SubdlSubtitle> = withContext(Dispatchers.IO) {
         try {
             val apiKey = getApiKey()
+            if (apiKey.isBlank()) {
+                Log.w(TAG, "SubDL API key is empty; skipping search for $title")
+                return@withContext emptyList()
+            }
             val queryParams = StringBuilder("api_key=$apiKey&languages=$languages")
             if (tmdbId != null && tmdbId > 0) {
                 queryParams.append("&tmdb_id=$tmdbId")
@@ -82,14 +104,14 @@ object SubdlRepository {
                 .header("User-Agent", "Mozilla/5.0 (Android TV; Idlix)")
                 .build()
 
-            val response = ApiClient.okHttpClient.newCall(request).execute()
+            val response = CoreHttp.okHttpClient.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.w(TAG, "SubDL request failed with code: ${response.code}")
                 return@withContext emptyList()
             }
 
             val body = response.body?.string() ?: return@withContext emptyList()
-            val subdlRes = ApiClient.json.decodeFromString<SubdlResponse>(body)
+            val subdlRes = CoreHttp.json.decodeFromString<SubdlResponse>(body)
             if (!subdlRes.status || subdlRes.subtitles.isEmpty()) {
                 Log.d(TAG, "No SubDL subtitles found for $title")
                 return@withContext emptyList()
@@ -151,7 +173,7 @@ object SubdlRepository {
                 .header("User-Agent", "Mozilla/5.0 (Android TV; Idlix)")
                 .build()
 
-            val res = ApiClient.okHttpClient.newCall(req).execute()
+            val res = CoreHttp.okHttpClient.newCall(req).execute()
             if (!res.isSuccessful) return null
 
             val inputStream = res.body?.byteStream() ?: return null

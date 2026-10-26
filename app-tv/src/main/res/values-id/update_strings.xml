@@ -1,0 +1,16 @@
+<resources>
+    <string name="update_title">Pembaruan Aplikasi</string>
+    <string name="update_check">Periksa Pembaruan</string>
+    <string name="update_checking">Memeriksa pembaruan…</string>
+    <string name="update_up_to_date">Sudah versi terbaru (%1$s)</string>
+    <string name="update_available_title">Pembaruan tersedia: %1$s</string>
+    <string name="update_size">Ukuran: %1$s</string>
+    <string name="update_download">Unduh Pembaruan</string>
+    <string name="update_downloading">Mengunduh… %1$d%%</string>
+    <string name="update_downloaded">Unduhan selesai. Pasang sekarang?</string>
+    <string name="update_install">Pasang Pembaruan</string>
+    <string name="update_failed">Gagal memeriksa pembaruan: %1$s</string>
+    <string name="update_retry">Coba Lagi</string>
+    <string name="update_channel_name">Pembaruan aplikasi</string>
+    <string name="update_channel_desc">Notifikasi saat rilis IDLIX TV baru tersedia</string>
+</resources>

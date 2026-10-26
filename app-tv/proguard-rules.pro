@@ -19,11 +19,10 @@
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# Retrofit & OkHttp
+# OkHttp (shared via CoreHttp)
+# (Retrofit service rules removed: direct-source uses OkHttp + kotlinx.serialization only.)
 -dontwarn okhttp3.**
 -dontwarn okio.**
--dontwarn retrofit2.**
--keep class retrofit2.** { *; }
 -keepattributes Exceptions
 
 # Media3 / ExoPlayer
