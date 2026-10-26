@@ -3,6 +3,7 @@ package com.idlix.tv.ui.components
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,8 +43,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.foundation.lazy.list.TvLazyColumn
+import androidx.tv.foundation.lazy.list.items
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
+import androidx.tv.material3.Border
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Glow
 import androidx.tv.material3.Icon
@@ -106,8 +110,11 @@ fun TvNavDrawer(
             )
         }
 
-        // 3. Navigation Rail / Drawer: Floating overlay
-        Column(
+        // 3. Navigation Rail / Drawer: Floating overlay. TvLazyColumn (not a
+        // static Column) so every destination stays reachable by D-pad on
+        // small-height screens — a focused item is scrolled into view, and
+        // Settings can no longer be cut off below the fold.
+        TvLazyColumn(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(drawerWidth)
@@ -117,25 +124,27 @@ fun TvNavDrawer(
             verticalArrangement = Arrangement.spacedBy(24.dp),
             horizontalAlignment = Alignment.Start
         ) {
-            // Official IDLIX Logo
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                contentAlignment = if (isExpanded) Alignment.CenterStart else Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.idlix_logo),
-                    contentDescription = "IDLIX",
-                    contentScale = ContentScale.Fit,
+            item {
+                // Official IDLIX Logo
+                Box(
                     modifier = Modifier
-                        .height(if (isExpanded) 28.dp else 16.dp)
-                        .then(if (isExpanded) Modifier.padding(start = 8.dp) else Modifier)
-                )
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    contentAlignment = if (isExpanded) Alignment.CenterStart else Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.idlix_logo),
+                        contentDescription = "IDLIX",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .height(if (isExpanded) 28.dp else 16.dp)
+                            .then(if (isExpanded) Modifier.padding(start = 8.dp) else Modifier)
+                    )
+                }
             }
 
             // Navigation items
-            NavItem.values().forEach { item ->
+            items(NavItem.values()) { item ->
                 val isSelected = item == selectedItem
                 var itemFocused by remember { mutableStateOf(false) }
 
@@ -149,8 +158,16 @@ fun TvNavDrawer(
                     scale = CardDefaults.scale(focusedScale = 1.0f),
                     glow = CardDefaults.glow(focusedGlow = Glow.None),
                     shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                    border = CardDefaults.border(
+                        border = Border(
+                            border = BorderStroke(1.dp, Color.Transparent)
+                        ),
+                        focusedBorder = Border(
+                            border = BorderStroke(2.dp, NetflixWhite)
+                        )
+                    ),
                     colors = CardDefaults.colors(
-                        containerColor = if (itemFocused) NetflixDarkCard else Color.Transparent,
+                        containerColor = if (isSelected) NetflixRed else Color.Transparent,
                         focusedContainerColor = NetflixRed
                     )
                 ) {

@@ -193,6 +193,8 @@ fun PlayerScreen(
         qualityDismissReturn = true
     }
     val speedReturnFocusRequester = remember { FocusRequester() }
+    var subtitleDismissReturn by remember { mutableStateOf(false) }
+    val subtitleReturnFocusRequester = remember { FocusRequester() }
     var isSpeedPickerVisible by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableStateOf(loadPlaybackSpeed(context)) }
     var availableAudioTracks by remember { mutableStateOf(emptyList<TvAudioOption>()) }
@@ -272,6 +274,19 @@ fun PlayerScreen(
         }
     }
 
+    // Return focus to the Subtitle button after the picker closes (same
+    // deferred pattern as the quality/speed pickers — previously focus was
+    // left wherever the modal had it, a D-pad dead zone).
+    LaunchedEffect(uiState.isSubtitlePickerVisible, subtitleDismissReturn) {
+        if (!uiState.isSubtitlePickerVisible && subtitleDismissReturn) {
+            subtitleDismissReturn = false
+            delay(50)
+            try {
+                subtitleReturnFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
     // Default focus on Try Again as soon as a playback error renders.
     LaunchedEffect(uiState.error) {
         if (uiState.error != null) {
@@ -320,7 +335,10 @@ fun PlayerScreen(
                                 if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible) {
                                     false
                                 } else {
-                                    p.seekTo((p.currentPosition + 10000L).coerceAtMost(p.duration))
+                                    // duration is TIME_UNSET (< 0) before the first frame;
+                                    // fall back to unbounded so the seek never goes negative.
+                                    val dur = p.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+                                    p.seekTo((p.currentPosition + 10000L).coerceAtMost(dur))
                                     showControls = true
                                     true
                                 }
@@ -373,9 +391,12 @@ fun PlayerScreen(
                                 true
                             } else if (uiState.isSubtitlePickerVisible) {
                                 viewModel.closeSubtitlePicker()
+                                subtitleDismissReturn = true
                                 true
                             } else if (isNextPromptVisible) {
                                 viewModel.dismissNextEpisode()
+                                showControls = true
+                                userInteractionCount++
                                 true
                             } else if (isScrubbing) {
                                 isScrubbing = false
@@ -424,7 +445,8 @@ fun PlayerScreen(
                                 false
                             } else if (!showControls) {
                                 activePlayer?.let { p ->
-                                    p.seekTo((p.currentPosition + 10000L).coerceAtMost(p.duration))
+                                    val dur = p.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+                                    p.seekTo((p.currentPosition + 10000L).coerceAtMost(dur))
                                 }
                                 showControls = true
                                 true
@@ -900,6 +922,7 @@ fun PlayerScreen(
                     viewModel.openSubtitlePicker()
                     userInteractionCount++
                 },
+                subtitleButtonModifier = Modifier.focusRequester(subtitleReturnFocusRequester),
                 bufferedPosMs = bufferedPos,
                 videoWidth = videoW,
                 videoHeight = videoH,
@@ -928,17 +951,20 @@ fun PlayerScreen(
                 onSelectTrack = { track ->
                     viewModel.selectSubtitleTrack(track)
                     applySubtitleTrack(track)
+                    subtitleDismissReturn = true
                 },
                 onSelectSubdl = { subdl ->
                     viewModel.selectSubdlSubtitle(subdl) { newTrack ->
                         applySubtitleTrack(newTrack)
                     }
+                    subtitleDismissReturn = true
                 },
                 onSearchSubdlClick = {
                     viewModel.searchSubdlSubtitles()
                 },
                 onDismiss = {
                     viewModel.closeSubtitlePicker()
+                    subtitleDismissReturn = true
                 },
                 availableAudioTracks = availableAudioTracks,
                 selectedAudioLanguage = selectedAudioLang,
@@ -963,7 +989,12 @@ fun PlayerScreen(
                     try {
                         applyPlaybackQuality(exoPlayer, quality)
                     } catch (_: Exception) {}
-                    closeQualityPicker()
+                    // Brief beat so the checkmark on the selected row is
+                    // visible before the modal vanishes (D-pad confirmation).
+                    scope.launch {
+                        delay(350)
+                        closeQualityPicker()
+                    }
                 },
                 // Aspect toggle stays in the modal (D-pad can flip back);
                 // the AndroidView update block applies it live.
@@ -986,7 +1017,12 @@ fun PlayerScreen(
                     try {
                         applyPlaybackSpeed(exoPlayer, speed)
                     } catch (_: Exception) {}
-                    closeSpeedPicker()
+                    // Brief beat so the checkmark on the selected row is
+                    // visible before the modal vanishes (D-pad confirmation).
+                    scope.launch {
+                        delay(350)
+                        closeSpeedPicker()
+                    }
                 },
                 onDismiss = {
                     closeSpeedPicker()
@@ -994,7 +1030,9 @@ fun PlayerScreen(
             )
             // Next Episode Prompt for TV Series (When <= 90s remaining)
             if (uiState.nextEpisode != null) {
-                val remainingSec = (remainingMs / 1000).toInt().coerceAtLeast(0)
+                // remainingMs is Long.MAX_VALUE while duration is unknown; clamp
+                // before toInt() so the countdown text never wraps negative.
+                val remainingSec = ((remainingMs / 1000).coerceAtMost(Int.MAX_VALUE.toLong())).toInt().coerceAtLeast(0)
                 TvNextEpisodePrompt(
                     nextEpisode = uiState.nextEpisode!!,
                     remainingSeconds = remainingSec,
@@ -1004,6 +1042,10 @@ fun PlayerScreen(
                     },
                     onDismiss = {
                         viewModel.dismissNextEpisode()
+                        // Deterministic landing: controls reappear with
+                        // Play focused instead of a focus-less frame.
+                        showControls = true
+                        userInteractionCount++
                     },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)

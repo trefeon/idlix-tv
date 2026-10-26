@@ -119,7 +119,15 @@ fun TvSpeedPickerModal(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            // Hairline divider under the header (10-foot scan structure).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0x33FFFFFF))
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
             TvLazyColumn(
                 contentPadding = PaddingValues(bottom = 24.dp),

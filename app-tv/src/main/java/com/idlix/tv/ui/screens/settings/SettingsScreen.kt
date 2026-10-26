@@ -2,6 +2,7 @@ package com.idlix.tv.ui.screens.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
+import androidx.tv.material3.Border
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
@@ -412,6 +414,12 @@ private fun SettingsActionButton(
             contentColor = NetflixWhite,
             focusedContentColor = if (destructive) NetflixWhite else NetflixBlack
         ),
+        scale = ButtonDefaults.scale(focusedScale = 1.05f),
+        border = ButtonDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, NetflixWhite)
+            )
+        ),
         shape = ButtonDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
         modifier = Modifier.height(38.dp)
     ) {
@@ -446,7 +454,13 @@ private fun SubtitleOption(
             contentColor = NetflixWhite,
             focusedContentColor = NetflixBlack
         ),
-        shape = ButtonDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
+        scale = ButtonDefaults.scale(focusedScale = 1.05f),
+        border = ButtonDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, NetflixWhite)
+            )
+        ),
+        shape = ButtonDefaults.shape(shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
         modifier = Modifier.height(38.dp)
     ) {
         Text(

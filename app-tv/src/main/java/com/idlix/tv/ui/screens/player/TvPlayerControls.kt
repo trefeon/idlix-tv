@@ -88,6 +88,7 @@ fun TvPlayerControls(
     onSeekTo: (Long) -> Unit,
     onToggleSubtitle: () -> Unit,
     onOpenSubtitlePicker: () -> Unit,
+    subtitleButtonModifier: Modifier = Modifier,
     onScrubbingChanged: ((Boolean) -> Unit)? = null,
     onUserInteraction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -686,6 +687,7 @@ fun TvPlayerControls(
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                             modifier = Modifier
                                 .focusRequester(subtitleFocusRequester)
+                                .then(subtitleButtonModifier)
                                 .focusProperties {
                                     up = seekBarFocusRequester
                                     left = qualityFocusRequester

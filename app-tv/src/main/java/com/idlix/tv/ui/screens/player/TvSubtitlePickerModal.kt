@@ -140,7 +140,15 @@ fun TvSubtitlePickerModal(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            // Hairline divider under the header (10-foot scan structure).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0x33FFFFFF))
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
             TvLazyColumn(
                 contentPadding = PaddingValues(bottom = 24.dp),
@@ -230,7 +238,15 @@ fun TvSubtitlePickerModal(
                                 onClick = onSearchSubdlClick,
                                 colors = ButtonDefaults.colors(
                                     containerColor = Color.Transparent,
-                                    contentColor = NetflixRed
+                                    contentColor = NetflixRed,
+                                    focusedContainerColor = NetflixRed,
+                                    focusedContentColor = NetflixWhite
+                                ),
+                                scale = ButtonDefaults.scale(focusedScale = 1.05f),
+                                border = ButtonDefaults.border(
+                                    focusedBorder = Border(
+                                        border = BorderStroke(2.dp, NetflixWhite)
+                                    )
                                 ),
                                 shape = ButtonDefaults.shape(shape = RoundedCornerShape(4.dp)),
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)

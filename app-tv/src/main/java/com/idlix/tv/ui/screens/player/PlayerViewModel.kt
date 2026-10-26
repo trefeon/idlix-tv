@@ -296,7 +296,21 @@ class PlayerViewModel(
         onReadyToPlay: ((NextEpisodeInfo) -> Unit)? = null
     ) {
         val next = _uiState.value.nextEpisode ?: return
+        // Dismiss first so the prompt can't refire mid-load, then load the
+        // next episode through the normal path (resolves stream, records
+        // history, queues the following episode).
+        _uiState.value = _uiState.value.copy(nextEpisode = null, isNextEpisodeDismissed = false)
         onReadyToPlay?.invoke(next)
+        loadStream(
+            contentType = "episode",
+            contentId = next.episode.id,
+            title = "${next.seriesTitle} - ${next.episode.name}",
+            posterUrl = next.posterUrl,
+            backdropUrl = next.backdropUrl,
+            slug = next.seriesSlug,
+            seasonNumber = next.seasonNumber,
+            episodeNumber = next.episode.episodeNumber
+        )
     }
 
     fun openSubtitlePicker() {

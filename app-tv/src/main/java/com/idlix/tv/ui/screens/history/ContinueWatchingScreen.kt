@@ -217,7 +217,9 @@ fun ContinueWatchingScreen(
                             onClick = onNavigateToHome,
                             colors = ButtonDefaults.colors(
                                 containerColor = NetflixRed,
-                                contentColor = NetflixWhite
+                                contentColor = NetflixWhite,
+                                focusedContainerColor = NetflixRed,
+                                focusedContentColor = NetflixWhite
                             ),
                             scale = ButtonDefaults.scale(focusedScale = 1.08f),
                             border = ButtonDefaults.border(

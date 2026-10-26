@@ -437,7 +437,15 @@ fun DetailScreen(
                                         onClick = { viewModel.selectSeason(slug, season) },
                                         colors = ButtonDefaults.colors(
                                             containerColor = if (isSelected) NetflixRed else NetflixDarkCard,
-                                            contentColor = NetflixWhite
+                                            contentColor = NetflixWhite,
+                                            focusedContainerColor = if (isSelected) NetflixRed else NetflixWhite,
+                                            focusedContentColor = if (isSelected) NetflixWhite else NetflixBlack
+                                        ),
+                                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                                        border = ButtonDefaults.border(
+                                            focusedBorder = Border(
+                                                border = BorderStroke(2.dp, NetflixWhite)
+                                            )
                                         ),
                                         shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
                                     ) {
