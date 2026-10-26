@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -144,30 +145,64 @@ fun TvPlayerControls(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xD9000000),
+                            Color(0xF2000000),
+                            Color(0x29000000),
                             Color(0x33000000),
-                            Color(0xD9000000)
+                            Color(0xF2000000)
                         )
                     )
                 )
         ) {
-            // Top Bar: Title
-            Row(
+            // Top Bar: Netflix mark + title + HD badge
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopStart)
-                    .padding(horizontal = 48.dp, vertical = 28.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 48.dp, vertical = 28.dp)
             ) {
-                Text(
-                    text = title,
-                    color = NetflixWhite,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 64.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(NetflixRed, RoundedCornerShape(2.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "N",
+                            color = NetflixWhite,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = title,
+                        color = NetflixWhite,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .border(BorderStroke(1.dp, NetflixLightGray), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "HD",
+                        color = NetflixWhite,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-
-            // Center Controls: Rewind 10s, Play/Pause, Forward 10s
             Row(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalArrangement = Arrangement.spacedBy(32.dp),

@@ -23,8 +23,9 @@ import com.idlix.tv.R
 import com.idlix.data.model.MovieItem
 import com.idlix.tv.ui.components.TvContinueWatchingRow
 import com.idlix.tv.ui.components.TvHeroBillboard
-import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.components.TvSwimlaneRow
+import com.idlix.tv.ui.components.TvTop10Row
+import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixWhite
 
@@ -136,9 +137,9 @@ fun HomeScreen(
                     )
                 }
 
-                // 4. Swimlane: Film Terpopuler
+                // 4. Top-10: oversized rank numerals + compact posters
                 item {
-                    TvSwimlaneRow(
+                    TvTop10Row(
                         title = stringResource(R.string.top_10_movies),
                         items = uiState.popularMovies,
                         onItemClick = { onNavigateToDetail(it.contentType, it.slug) }

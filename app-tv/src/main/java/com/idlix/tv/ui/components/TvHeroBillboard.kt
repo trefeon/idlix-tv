@@ -1,6 +1,8 @@
 package com.idlix.tv.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -42,18 +44,20 @@ import coil.size.Precision
 import com.idlix.tv.R
 import com.idlix.data.model.MovieItem
 import com.idlix.tv.ui.theme.NetflixBlack
-import com.idlix.tv.ui.theme.NetflixGold
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
 
+private val MatchGreen = Color(0xFF46D369)
+
+// Full-bleed backdrop fade: transparent up top, near-black at the rail edge.
 private val HeroBottomBrush = Brush.verticalGradient(
     colors = listOf(
         Color.Transparent,
-        NetflixBlack.copy(alpha = 0.5f),
+        NetflixBlack.copy(alpha = 0.55f),
+        NetflixBlack.copy(alpha = 0.92f),
         NetflixBlack
-    ),
-    startY = 80f
+    )
 )
 
 private val HeroLeftBrush = Brush.horizontalGradient(
@@ -87,12 +91,18 @@ fun TvHeroBillboard(
             .build()
     }
 
+    // Match score derived from TMDB vote average (8.7 -> "87% Match").
+    val matchPercent = remember(movie.voteAverage) {
+        movie.voteAverage?.toDoubleOrNull()?.let { ((it * 10).toInt()).coerceIn(0, 100) }
+    }
+    val isSeries = movie.contentType == "tv_series"
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(340.dp)
+            .height(400.dp)
     ) {
-        // Dynamic Backdrop
+        // Full-bleed backdrop
         AsyncImage(
             model = backdropRequest,
             contentDescription = movie.title,
@@ -100,18 +110,18 @@ fun TvHeroBillboard(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Bottom gradient fade to black
+        // Bottom gradient fade into the rails
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(HeroBottomBrush)
         )
 
-        // Left gradient fade ONLY on text area (saves 70% fillrate)
+        // Left gradient scrim behind the text block (saves fillrate vs full-screen)
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(540.dp)
+                .width(560.dp)
                 .background(HeroLeftBrush)
         )
 
@@ -119,15 +129,41 @@ fun TvHeroBillboard(
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(480.dp)
-                .padding(start = 48.dp, top = 24.dp, bottom = 24.dp),
+                .width(520.dp)
+                .padding(start = 48.dp, top = 32.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.Bottom
         ) {
+            // Netflix-style kicker: red N mark + tracked-out label
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .background(NetflixRed, RoundedCornerShape(2.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "N",
+                        color = NetflixWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isSeries) "S E R I E S" else "F I L M",
+                    color = NetflixLightGray,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             // Title
             Text(
                 text = movie.title,
                 color = NetflixWhite,
-                fontSize = 28.sp,
+                fontSize = 34.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -135,27 +171,18 @@ fun TvHeroBillboard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Metadata Badges (Rating, Year, Quality)
+            // Match-score metadata line: match % • year • maturity badge • HD badge
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (movie.formattedRating != "N/A") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = NetflixGold,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = "${movie.formattedRating} / 10",
-                            color = NetflixWhite,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                if (matchPercent != null) {
+                    Text(
+                        text = "$matchPercent% Match",
+                        color = MatchGreen,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 movie.releaseDate?.take(4)?.let { year ->
@@ -166,27 +193,54 @@ fun TvHeroBillboard(
                     )
                 }
 
-                movie.quality?.let { q ->
+                // Maturity / age badge (catalog carries no certification; stable 13+ gate)
+                Box(
+                    modifier = Modifier
+                        .border(BorderStroke(1.dp, NetflixLightGray), RoundedCornerShape(2.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "13+",
+                        color = NetflixWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                movie.quality?.takeIf { it.isNotBlank() }?.let { q ->
                     Box(
                         modifier = Modifier
-                            .background(Color(0x44FFFFFF), RoundedCornerShape(3.dp))
+                            .border(BorderStroke(1.dp, NetflixLightGray), RoundedCornerShape(3.dp))
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = q,
+                            text = q.uppercase(),
                             color = NetflixWhite,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .border(BorderStroke(1.dp, NetflixLightGray), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "HD",
+                        color = NetflixWhite,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Action Buttons
+            // Action Buttons: white Play CTA + translucent More Info
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
                     onClick = onPlayClick,
@@ -196,6 +250,12 @@ fun TvHeroBillboard(
                         contentColor = NetflixBlack,
                         focusedContainerColor = NetflixRed,
                         focusedContentColor = NetflixWhite
+                    ),
+                    scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                    border = ButtonDefaults.border(
+                        focusedBorder = Border(
+                            border = BorderStroke(2.dp, NetflixWhite)
+                        )
                     ),
                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
                 ) {
@@ -223,6 +283,12 @@ fun TvHeroBillboard(
                         contentColor = NetflixWhite,
                         focusedContainerColor = NetflixWhite,
                         focusedContentColor = NetflixBlack
+                    ),
+                    scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                    border = ButtonDefaults.border(
+                        focusedBorder = Border(
+                            border = BorderStroke(2.dp, NetflixWhite)
+                        )
                     ),
                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
                 ) {

@@ -2,6 +2,7 @@ package com.idlix.tv.ui.screens.detail
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,7 +121,7 @@ fun DetailScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(380.dp)
+                            .height(420.dp)
                     ) {
                         AsyncImage(
                             model = backdropUrl,
@@ -129,7 +130,7 @@ fun DetailScreen(
                             modifier = Modifier.fillMaxSize()
                         )
 
-                        // Gradient fade
+                        // Bottom gradient fade into the page body
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -137,10 +138,25 @@ fun DetailScreen(
                                     Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            NetflixBlack.copy(alpha = 0.6f),
+                                            NetflixBlack.copy(alpha = 0.55f),
+                                            NetflixBlack.copy(alpha = 0.92f),
                                             NetflixBlack
-                                        ),
-                                        startY = 120f
+                                        )
+                                    )
+                                )
+                        )
+
+                        // Left scrim behind the text block
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            NetflixBlack.copy(alpha = 0.85f),
+                                            NetflixBlack.copy(alpha = 0.4f),
+                                            Color.Transparent
+                                        )
                                     )
                                 )
                         )
@@ -151,44 +167,101 @@ fun DetailScreen(
                                 .padding(horizontal = 48.dp, vertical = 20.dp),
                             verticalArrangement = Arrangement.Bottom
                         ) {
+                            // Netflix kicker: red N mark + tracked label
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(NetflixRed, RoundedCornerShape(2.dp))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "N",
+                                        color = NetflixWhite,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (contentType == "movie") "F I L M" else "S E R I E S",
+                                    color = NetflixLightGray,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
                             Text(
                                 text = title,
                                 color = NetflixWhite,
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.Black
+                                fontSize = 36.sp,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
 
+                            // Match-score metadata line: match % • year • maturity • HD
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                if (rating.isNotBlank()) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Star,
-                                            contentDescription = null,
-                                            tint = NetflixGold,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = "$rating / 10",
-                                            color = NetflixWhite,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
+                                rating.toDoubleOrNull()?.let { vote ->
+                                    val percent = ((vote * 10).toInt()).coerceIn(0, 100)
+                                    Text(
+                                        text = "$percent% Match",
+                                        color = Color(0xFF46D369),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
 
                                 if (year.isNotBlank()) {
                                     Text(text = year, color = NetflixLightGray, fontSize = 14.sp)
                                 }
 
-                                if (genres.isNotBlank()) {
-                                    Text(text = genres, color = NetflixLightGray, fontSize = 14.sp)
+                                // Maturity badge (catalog carries no certification; stable 13+ gate)
+                                Box(
+                                    modifier = Modifier
+                                        .border(BorderStroke(1.dp, NetflixLightGray), RoundedCornerShape(2.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "13+",
+                                        color = NetflixWhite,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
+
+                                // HD badge
+                                Box(
+                                    modifier = Modifier
+                                        .border(BorderStroke(1.dp, NetflixLightGray), RoundedCornerShape(3.dp))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "HD",
+                                        color = NetflixWhite,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            if (genres.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = genres,
+                                    color = NetflixLightGray,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.width(600.dp)
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -376,7 +449,7 @@ fun TvEpisodeCard(
         colors = CardDefaults.colors(
             containerColor = NetflixDarkCard
         ),
-        scale = CardDefaults.scale(focusedScale = 1.05f),
+        scale = CardDefaults.scale(focusedScale = 1.08f),
         border = CardDefaults.border(
             focusedBorder = Border(
                 border = BorderStroke(2.dp, NetflixWhite)

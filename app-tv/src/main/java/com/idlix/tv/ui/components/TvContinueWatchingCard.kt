@@ -50,9 +50,9 @@ import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
 
-private val ContinueCardShape = RoundedCornerShape(8.dp)
+private val ContinueCardShape = RoundedCornerShape(10.dp)
 private val ContinueScrimBrush = Brush.verticalGradient(
-    colors = listOf(Color.Transparent, Color(0xCC141414), NetflixBlack)
+    colors = listOf(Color.Transparent, Color(0xB3141414), NetflixBlack)
 )
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -88,6 +88,9 @@ fun TvContinueWatchingCard(
         glow = CardDefaults.glow(focusedGlow = Glow.None),
         shape = CardDefaults.shape(shape = ContinueCardShape),
         border = CardDefaults.border(
+            border = Border(
+                border = BorderStroke(2.dp, Color.Transparent)
+            ),
             focusedBorder = Border(
                 border = BorderStroke(2.dp, NetflixWhite)
             )
@@ -171,8 +174,8 @@ fun TvContinueWatchingCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
-                        .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(1.5.dp))
+                        .height(4.dp)
+                        .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
                 ) {
                     Box(
                         modifier = Modifier

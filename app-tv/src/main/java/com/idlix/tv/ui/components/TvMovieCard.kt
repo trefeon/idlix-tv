@@ -44,9 +44,9 @@ import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
 
-private val CardShape = RoundedCornerShape(8.dp)
+private val CardShape = RoundedCornerShape(10.dp)
 private val BottomScrimBrush = Brush.verticalGradient(
-    colors = listOf(Color.Transparent, Color(0xEE141414))
+    colors = listOf(Color.Transparent, Color(0xB3141414), Color(0xF2141414))
 )
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -87,6 +87,9 @@ fun TvMovieCard(
         glow = CardDefaults.glow(focusedGlow = Glow.None),
         shape = CardDefaults.shape(shape = CardShape),
         border = CardDefaults.border(
+            border = Border(
+                border = BorderStroke(2.dp, Color.Transparent)
+            ),
             focusedBorder = Border(
                 border = BorderStroke(2.dp, NetflixWhite)
             )
@@ -123,9 +126,9 @@ fun TvMovieCard(
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = quality,
+                        text = quality.uppercase(),
                         color = NetflixWhite,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }

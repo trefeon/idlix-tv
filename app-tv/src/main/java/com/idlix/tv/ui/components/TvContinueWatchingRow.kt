@@ -27,18 +27,18 @@ fun TvContinueWatchingRow(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp)
+            .padding(vertical = 10.dp)
     ) {
         Text(
             text = title,
             color = NetflixWhite,
-            fontSize = 16.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 48.dp, bottom = 12.dp)
+            modifier = Modifier.padding(start = 48.dp, bottom = 8.dp)
         )
 
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 12.dp)
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp)
         ) {
             items(items, key = { it.contentId }) { item ->
                 TvContinueWatchingCard(
