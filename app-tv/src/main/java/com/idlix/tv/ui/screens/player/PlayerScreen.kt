@@ -741,7 +741,10 @@ fun PlayerScreen(
                     userInteractionCount++
                 },
                 onSeekForward = {
-                    exoPlayer.seekTo((exoPlayer.currentPosition + 10000L).coerceAtMost(exoPlayer.duration))
+                    // duration is TIME_UNSET (< 0) before the first frame;
+                    // same guard as the D-pad/gamepad seek branches above.
+                    val dur = exoPlayer.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+                    exoPlayer.seekTo((exoPlayer.currentPosition + 10000L).coerceAtMost(dur))
                     showControls = true
                     userInteractionCount++
                 },
