@@ -15,7 +15,7 @@ import com.idlix.data.model.SeriesListResponse
  *
  * TODO(new-source): wire to the official-site direct source + IdlixDomainResolver.
  * All read methods return empty/null; [resolveStream] fails closed until then.
- * Signatures are intentionally unchanged so app-tv/app-mobile keep compiling.
+ * Signatures are intentionally unchanged so app-tv keeps compiling.
  */
 class IdlixRepository {
 

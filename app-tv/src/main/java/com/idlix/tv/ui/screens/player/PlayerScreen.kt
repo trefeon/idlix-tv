@@ -1,6 +1,7 @@
 package com.idlix.tv.ui.screens.player
 
 import android.content.Context
+import android.graphics.Color
 import android.net.Uri
 import android.os.Looper
 import android.view.KeyEvent
@@ -43,6 +44,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -54,6 +56,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.text.TextRenderer
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -118,6 +121,16 @@ private class QueryPreservingDataSourceFactory(
     override fun createDataSource(): androidx.media3.datasource.DataSource {
         return QueryPreservingDataSource(upstreamFactory.createDataSource(), tokenQuery)
     }
+}
+
+fun letterboxBottomPadding(viewW: Float, viewH: Float, videoW: Float, videoH: Float): Float {
+    if (viewW <= 0f || viewH <= 0f || videoW <= 0f || videoH <= 0f) return 0.08f
+    val videoAspect = videoW / videoH
+    if (videoAspect <= 0f) return 0.08f
+    val displayedH = viewW / videoAspect
+    val barFraction = ((viewH - displayedH) / 2f / viewH).coerceAtLeast(0f)
+    if (barFraction <= 0f) return 0.08f
+    return (barFraction + 0.02f).coerceIn(0.02f, 0.45f)
 }
 
 @OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
@@ -530,10 +543,39 @@ fun PlayerScreen(
                     PlayerView(ctx).apply {
                         player = exoPlayer
                         useController = false
-                        subtitleView?.apply {
-                            setUserDefaultStyle()
-                            setUserDefaultTextSize()
-                            setFractionalTextSize(0.053f) // Standard Netflix TV subtitle proportion
+                        subtitleView?.let { subs ->
+                            subs.setApplyEmbeddedStyles(false)
+                            subs.setStyle(
+                                CaptionStyleCompat(
+                                    Color.WHITE,
+                                    Color.TRANSPARENT,
+                                    Color.TRANSPARENT,
+                                    CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                    Color.BLACK,
+                                    null
+                                )
+                            )
+                            subs.setFractionalTextSize(0.053f) // Standard Netflix TV subtitle proportion
+                            subs.setBottomPaddingFraction(0.08f)
+                            fun refreshPadding() {
+                                val vs = exoPlayer.videoSize
+                                subs.setBottomPaddingFraction(
+                                    letterboxBottomPadding(
+                                        width.toFloat(),
+                                        height.toFloat(),
+                                        vs.width.toFloat(),
+                                        vs.height.toFloat()
+                                    )
+                                )
+                            }
+                            exoPlayer.addListener(
+                                object : Player.Listener {
+                                    override fun onVideoSizeChanged(videoSize: VideoSize) {
+                                        refreshPadding()
+                                    }
+                                }
+                            )
+                            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> refreshPadding() }
                         }
                     }
                 },

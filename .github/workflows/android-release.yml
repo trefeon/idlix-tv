@@ -49,15 +49,11 @@ jobs:
       - name: Assemble TV release APK
         run: ./gradlew :app-tv:assembleRelease
 
-      - name: Assemble Mobile release APK
-        run: ./gradlew :app-mobile:assembleRelease
-
       - name: Rename APKs with version
         run: |
           TAG="${GITHUB_REF_NAME:-manual}"
           mkdir -p dist
           cp app-tv/build/outputs/apk/release/app-tv-release.apk "dist/idlix-tv-${TAG}.apk" 2>/dev/null || true
-          cp app-mobile/build/outputs/apk/release/app-mobile-release.apk "dist/idlix-mobile-${TAG}.apk" 2>/dev/null || true
           ls -la dist
 
       - name: Upload APK artifacts

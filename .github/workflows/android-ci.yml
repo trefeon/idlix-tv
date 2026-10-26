@@ -38,11 +38,8 @@ jobs:
       - name: Assemble app-tv
         run: ./gradlew :app-tv:assembleDebug --stacktrace
 
-      - name: Assemble app-mobile
-        run: ./gradlew :app-mobile:assembleDebug --stacktrace
-
       - name: Run unit tests
-        run: ./gradlew :core:data:testDebugUnitTest :app-tv:testDebugUnitTest :app-mobile:testDebugUnitTest --stacktrace
+        run: ./gradlew :core:data:testDebugUnitTest :app-tv:testDebugUnitTest --stacktrace
 
       - name: Upload test reports
         if: always()
@@ -52,4 +49,3 @@ jobs:
           path: |
             core/data/build/reports/tests/
             app-tv/build/reports/tests/
-            app-mobile/build/reports/tests/

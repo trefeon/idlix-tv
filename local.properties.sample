@@ -1,5 +1,5 @@
 # Copy to local.properties and fill in real values. NEVER commit local.properties.
-# Release signing (all required for ./gradlew :app-tv:assembleRelease / :app-mobile:assembleRelease)
+# Release signing (all required for ./gradlew :app-tv:assembleRelease)
 storeFile=/absolute/path/to/upload-keystore.jks
 storePassword=CHANGE_ME
 keyAlias=CHANGE_ME
