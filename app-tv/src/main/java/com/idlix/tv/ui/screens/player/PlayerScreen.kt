@@ -44,6 +44,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -56,6 +57,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.text.TextRenderer
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Button
@@ -169,6 +171,18 @@ fun PlayerScreen(
     val playButtonFocusRequester = remember { FocusRequester() }
 
     var activePlayer: ExoPlayer? by remember { mutableStateOf(null) }
+    val qualityReturnFocusRequester = remember { FocusRequester() }
+    var isQualityPickerVisible by remember { mutableStateOf(false) }
+    var selectedQuality by remember { mutableStateOf(loadPlaybackQuality(context)) }
+    var availableHeights by remember { mutableStateOf(emptySet<Int>()) }
+    var videoW by remember { mutableIntStateOf(0) }
+    var videoH by remember { mutableIntStateOf(0) }
+    var bufferedPos by remember { mutableLongStateOf(0L) }
+    var qualityDismissReturn by remember { mutableStateOf(false) }
+    fun closeQualityPicker() {
+        isQualityPickerVisible = false
+        qualityDismissReturn = true
+    }
 
     LaunchedEffect(contentType, contentId) {
         viewModel.loadStream(
@@ -188,8 +202,8 @@ fun PlayerScreen(
     }
 
     // Auto-hide controls after 6 seconds of inactivity, paused during modal, scrubbing, or next episode prompt
-    LaunchedEffect(showControls, uiState.isSubtitlePickerVisible, isScrubbing, userInteractionCount, isNextPromptVisible) {
-        if (uiState.isSubtitlePickerVisible || isScrubbing || isNextPromptVisible) {
+    LaunchedEffect(showControls, uiState.isSubtitlePickerVisible, isQualityPickerVisible, isScrubbing, userInteractionCount, isNextPromptVisible) {
+        if (uiState.isSubtitlePickerVisible || isQualityPickerVisible || isScrubbing || isNextPromptVisible) {
             // Keep controls open or don't steal focus from prompt / modals
             return@LaunchedEffect
         }
@@ -198,7 +212,7 @@ fun PlayerScreen(
             showControls = false
         } else {
             try {
-                if (!isNextPromptVisible && !uiState.isSubtitlePickerVisible) {
+                    if (!isNextPromptVisible && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible) {
                     rootFocusRequester.requestFocus()
                 }
             } catch (e: Exception) {}
@@ -211,6 +225,18 @@ fun PlayerScreen(
             try {
                 playButtonFocusRequester.requestFocus()
             } catch (e: Exception) {}
+        }
+    }
+    // Return focus to the Quality button after the picker closes. Controls
+    // recompose visible in the same frame the modal flag flips, so the request
+    // is deferred past recomposition instead of firing inside onDismiss.
+    LaunchedEffect(isQualityPickerVisible, qualityDismissReturn) {
+        if (!isQualityPickerVisible && qualityDismissReturn) {
+            qualityDismissReturn = false
+            delay(50)
+            try {
+                qualityReturnFocusRequester.requestFocus()
+            } catch (_: Exception) {}
         }
     }
 
@@ -249,7 +275,7 @@ fun PlayerScreen(
                             },
                             onSeekForward = {
                                 val p = activePlayer
-                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible) {
+                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible) {
                                     false
                                 } else {
                                     p.seekTo((p.currentPosition + 10000L).coerceAtMost(p.duration))
@@ -259,7 +285,7 @@ fun PlayerScreen(
                             },
                             onSeekBackward = {
                                 val p = activePlayer
-                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible) {
+                                if (p == null || isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible) {
                                     false
                                 } else {
                                     p.seekTo((p.currentPosition - 10000L).coerceAtLeast(0L))
@@ -268,7 +294,7 @@ fun PlayerScreen(
                                 }
                             },
                             onOpenSubtitlePicker = {
-                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible ||
+                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible ||
                                     uiState.resolvedStream == null
                                 ) {
                                     false
@@ -279,7 +305,7 @@ fun PlayerScreen(
                                 }
                             },
                             onToggleControls = {
-                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible) {
+                                if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible) {
                                     false
                                 } else {
                                     showControls = !showControls
@@ -297,7 +323,10 @@ fun PlayerScreen(
                         else rawCode
                     ) {
                         KeyEvent.KEYCODE_BACK -> {
-                            if (uiState.isSubtitlePickerVisible) {
+                            if (isQualityPickerVisible) {
+                                closeQualityPicker()
+                                true
+                            } else if (uiState.isSubtitlePickerVisible) {
                                 viewModel.closeSubtitlePicker()
                                 true
                             } else if (isNextPromptVisible) {
@@ -451,6 +480,10 @@ fun PlayerScreen(
             val httpDataSourceFactory = remember(tokenQuery) {
                 val baseHttp = DefaultHttpDataSource.Factory()
                     .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+                    // Explicit timeouts so dead mirrors fail fast instead of
+                    // hanging on the OS default.
+                    .setConnectTimeoutMs(8000)
+                    .setReadTimeoutMs(8000)
                     .setDefaultRequestProperties(
                         mapOf(
                             "Referer" to IdlixDomainResolver.referer(),
@@ -470,6 +503,9 @@ fun PlayerScreen(
                     .build()
 
                 val hlsSource = HlsMediaSource.Factory(httpDataSourceFactory)
+                    // Single-variant IDLIX playlists carry full variant info, so
+                    // chunkless preparation shortens tune-in without extra fetches.
+                    .setAllowChunklessPreparation(true)
                     .createMediaSource(mediaItem)
                 if (sub == null) return hlsSource
 
@@ -514,18 +550,26 @@ fun PlayerScreen(
                     }
                 }
 
+                // P0 streaming backlog: deeper buffers to ride out mirror stalls.
                 val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
-                        15000,
-                        50000,
+                        30000,
+                        60000,
                         2500,
                         5000
                     )
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build()
 
+                // Start ABR at 4 Mbps so the first pick is HD on decent links
+                // instead of ramping up from the ~1 Mbps default.
+                val bandwidthMeter = DefaultBandwidthMeter.Builder(context)
+                    .setInitialBitrateEstimate(4_000_000L)
+                    .build()
+
                 ExoPlayer.Builder(context, renderersFactory)
                     .setLoadControl(loadControl)
+                    .setBandwidthMeter(bandwidthMeter)
                     .build().apply {
                     val activeSub = resolved.subtitles.firstOrNull { it.lang == "id" }
                         ?: resolved.subtitles.firstOrNull()
@@ -538,6 +582,9 @@ fun PlayerScreen(
                         .setSelectUndeterminedTextLanguage(true)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                         .build()
+
+                    // Restore the persisted quality cap live (no player recreation).
+                    applyPlaybackQuality(this, loadPlaybackQuality(context))
 
                     prepare()
                     if (uiState.initialPositionMs > 0) {
@@ -577,6 +624,7 @@ fun PlayerScreen(
                 while (true) {
                     currentPos = exoPlayer.currentPosition
                     duration = exoPlayer.duration.coerceAtLeast(0L)
+                    bufferedPos = exoPlayer.bufferedPosition
                     isPlaying = exoPlayer.isPlaying
                     if (Math.abs(currentPos - lastSavedPos) >= 5000L && duration > 0) {
                         viewModel.saveProgress(currentPos, duration)
@@ -594,6 +642,21 @@ fun PlayerScreen(
                                 viewModel.playNextEpisode()
                             }
                         }
+                    }
+
+                    override fun onVideoSizeChanged(videoSize: VideoSize) {
+                        videoW = videoSize.width
+                        videoH = videoSize.height
+                    }
+
+                    override fun onTracksChanged(tracks: Tracks) {
+                        try {
+                            availableHeights = tracks.groups
+                                .flatMap { group -> (0 until group.length).map { group.getTrackFormat(it) } }
+                                .filter { it.sampleMimeType?.startsWith("video/") == true }
+                                .mapNotNull { it.height.takeIf { h -> h > 0 } }
+                                .toSet()
+                        } catch (_: Exception) {}
                     }
                 }
                 exoPlayer.addListener(playerListener)
@@ -660,7 +723,7 @@ fun PlayerScreen(
             // D-Pad Player Controls
             TvPlayerControls(
                 title = resolved.title,
-                isVisible = showControls && !uiState.isSubtitlePickerVisible,
+                isVisible = showControls && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible,
                 isPlaying = isPlaying,
                 currentPosMs = currentPos,
                 durationMs = duration,
@@ -716,7 +779,16 @@ fun PlayerScreen(
                 onOpenSubtitlePicker = {
                     viewModel.openSubtitlePicker()
                     userInteractionCount++
-                }
+                },
+                bufferedPosMs = bufferedPos,
+                videoWidth = videoW,
+                videoHeight = videoH,
+                qualityLabel = selectedQuality.title,
+                onOpenQualityPicker = {
+                    isQualityPickerVisible = true
+                    userInteractionCount++
+                },
+                qualityButtonModifier = Modifier.focusRequester(qualityReturnFocusRequester),
             )
 
             // Subtitle Picker Modal (IDLIX & SubDL.com third party)
@@ -743,13 +815,30 @@ fun PlayerScreen(
                     viewModel.closeSubtitlePicker()
                 }
             )
+            // Quality Picker Modal (live cap, no player recreation)
+            TvQualityPickerModal(
+                isVisible = isQualityPickerVisible,
+                currentQuality = selectedQuality,
+                availableHeights = availableHeights,
+                onSelectQuality = { quality ->
+                    selectedQuality = quality
+                    savePlaybackQuality(context, quality)
+                    try {
+                        applyPlaybackQuality(exoPlayer, quality)
+                    } catch (_: Exception) {}
+                    closeQualityPicker()
+                },
+                onDismiss = {
+                    closeQualityPicker()
+                }
+            )
             // Next Episode Prompt for TV Series (When <= 90s remaining)
             if (uiState.nextEpisode != null) {
                 val remainingSec = (remainingMs / 1000).toInt().coerceAtLeast(0)
                 TvNextEpisodePrompt(
                     nextEpisode = uiState.nextEpisode!!,
                     remainingSeconds = remainingSec,
-                    isVisible = isNextPromptVisible && !uiState.isSubtitlePickerVisible,
+                    isVisible = isNextPromptVisible && !uiState.isSubtitlePickerVisible && !isQualityPickerVisible,
                     onPlayNext = {
                         viewModel.playNextEpisode()
                     },

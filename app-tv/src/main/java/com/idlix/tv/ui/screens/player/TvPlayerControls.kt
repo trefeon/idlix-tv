@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.ClosedCaptionDisabled
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
@@ -89,9 +90,16 @@ fun TvPlayerControls(
     onScrubbingChanged: ((Boolean) -> Unit)? = null,
     onUserInteraction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    playButtonModifier: Modifier = Modifier
+    playButtonModifier: Modifier = Modifier,
+    bufferedPosMs: Long = 0L,
+    videoWidth: Int = 0,
+    videoHeight: Int = 0,
+    qualityLabel: String = "Auto",
+    onOpenQualityPicker: () -> Unit = {},
+    qualityButtonModifier: Modifier = Modifier,
 ) {
     val subtitleFocusRequester = remember { FocusRequester() }
+    val qualityFocusRequester = remember { FocusRequester() }
     val internalPlayFocusRequester = remember { FocusRequester() }
     val seekBarFocusRequester = remember { FocusRequester() }
 
@@ -189,6 +197,15 @@ fun TvPlayerControls(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                // Driven by the live video size when known; falls back to the
+                // historic static "HD" until the first frame reports dimensions.
+                val badgeText = when {
+                    videoHeight >= 2160 || videoWidth >= 3840 -> "4K"
+                    videoHeight >= 1080 || videoWidth >= 1920 -> "FHD"
+                    videoHeight >= 720 || videoWidth >= 1280 -> "HD"
+                    videoWidth > 0 && videoHeight > 0 -> "SD"
+                    else -> "HD"
+                }
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -196,7 +213,7 @@ fun TvPlayerControls(
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = "HD",
+                        text = badgeText,
                         color = NetflixWhite,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -323,6 +340,7 @@ fun TvPlayerControls(
             ) {
                 val targetPos = if (isSeekFocused) scrubPosMs else currentPosMs
                 val progress = if (durationMs > 0) (targetPos.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                val bufferedProgress = if (durationMs > 0) (bufferedPosMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                 val animatedBarHeight by animateDpAsState(
                     targetValue = if (isSeekFocused) 10.dp else 6.dp,
                     label = "barHeight"
@@ -335,7 +353,7 @@ fun TvPlayerControls(
                         .focusRequester(seekBarFocusRequester)
                         .focusProperties {
                             up = internalPlayFocusRequester
-                            down = subtitleFocusRequester
+                            down = qualityFocusRequester
                         }
                         .onFocusChanged { state ->
                             val wasFocused = isSeekFocused
@@ -481,6 +499,17 @@ fun TvPlayerControls(
                                     )
                             )
 
+                            // Buffered range (visual only — scrub/commit model untouched)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(bufferedProgress)
+                                    .height(animatedBarHeight)
+                                    .background(
+                                        Color.White.copy(alpha = 0.35f),
+                                        RoundedCornerShape(animatedBarHeight / 2)
+                                    )
+                            )
+
                             // Active / Filled Progress Track
                             Box(
                                 modifier = Modifier
@@ -538,48 +567,101 @@ fun TvPlayerControls(
                         }
                     }
 
-                    // Subtitle Picker Button
-                    Button(
-                        onClick = {
-                            onOpenSubtitlePicker()
-                            onUserInteraction?.invoke()
-                        },
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (isSubtitleEnabled) NetflixRed else NetflixDarkCard,
-                            contentColor = NetflixWhite,
-                            focusedContainerColor = if (isSubtitleEnabled) Color(0xFFB81D24) else NetflixWhite,
-                            focusedContentColor = if (isSubtitleEnabled) NetflixWhite else Color.Black
-                        ),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
-                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
-                        ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier
-                            .focusRequester(subtitleFocusRequester)
-                            .focusProperties { up = seekBarFocusRequester }
+                    // Quality + Subtitle buttons (focus: seekBar → quality → subtitle)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                        // Quality Picker Button
+                        Button(
+                            onClick = {
+                                onOpenQualityPicker()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixDarkCard,
+                                contentColor = NetflixWhite,
+                                focusedContainerColor = NetflixWhite,
+                                focusedContentColor = Color.Black
+                            ),
+                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .focusRequester(qualityFocusRequester)
+                                .then(qualityButtonModifier)
+                                .focusProperties {
+                                    up = seekBarFocusRequester
+                                    right = subtitleFocusRequester
+                                }
                         ) {
-                            Icon(
-                                imageVector = if (isSubtitleEnabled) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
-                                contentDescription = stringResource(R.string.subtitles),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val displayLabel = if (!isSubtitleEnabled) {
-                                stringResource(R.string.subtitle_off)
-                            } else {
-                                selectedSubtitleLabel ?: stringResource(R.string.subtitle_on)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.HighQuality,
+                                    contentDescription = "Quality",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = qualityLabel,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            Text(
-                                text = "Sub: $displayLabel",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        }
+
+                        // Subtitle Picker Button
+                        Button(
+                            onClick = {
+                                onOpenSubtitlePicker()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (isSubtitleEnabled) NetflixRed else NetflixDarkCard,
+                                contentColor = NetflixWhite,
+                                focusedContainerColor = if (isSubtitleEnabled) Color(0xFFB81D24) else NetflixWhite,
+                                focusedContentColor = if (isSubtitleEnabled) NetflixWhite else Color.Black
+                            ),
+                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .focusRequester(subtitleFocusRequester)
+                                .focusProperties {
+                                    up = seekBarFocusRequester
+                                    left = qualityFocusRequester
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isSubtitleEnabled) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
+                                    contentDescription = stringResource(R.string.subtitles),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val displayLabel = if (!isSubtitleEnabled) {
+                                    stringResource(R.string.subtitle_off)
+                                } else {
+                                    selectedSubtitleLabel ?: stringResource(R.string.subtitle_on)
+                                }
+                                Text(
+                                    text = "Sub: $displayLabel",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
