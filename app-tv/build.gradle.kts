@@ -66,6 +66,12 @@ android {
         logger.warn("No release keystore configured: :app-tv:assembleRelease will produce an UNSIGNED APK.")
     }
 
+    // AGP's NullSafeMutableLiveData detector crashes against the pinned Kotlin
+    // analysis API (lint tooling bug, not app code) and kills release builds.
+    lint {
+        disable += "NullSafeMutableLiveData"
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
