@@ -11,6 +11,21 @@ sealed class Screen(val route: String) {
     object ContinueWatching : Screen("continue_watching")
     object Settings : Screen("settings")
 
+    object Genres : Screen("genres")
+    object GenreDetail : Screen("genre/{slug}?name={name}") {
+        fun createRoute(slug: String, name: String = ""): String {
+            val encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8.toString())
+            return "genre/$slug?name=$encodedName"
+        }
+    }
+
+    object CollectionDetail : Screen("collection/{slug}?name={name}") {
+        fun createRoute(slug: String, name: String = ""): String {
+            val encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8.toString())
+            return "collection/$slug?name=$encodedName"
+        }
+    }
+
     object Detail : Screen("detail/{contentType}/{slug}") {
         fun createRoute(contentType: String, slug: String): String =
             "detail/$contentType/$slug"

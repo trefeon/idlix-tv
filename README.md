@@ -1,4 +1,4 @@
-# IDLIX for Android TV 🎬📺
+# IDLIX for Android TV
 
 [![Release](https://img.shields.io/github/v/release/trefeon/idlix-tv)](https://github.com/trefeon/idlix-tv/releases)
 [![CI](https://github.com/trefeon/idlix-tv/actions/workflows/android-ci.yml/badge.svg)](https://github.com/trefeon/idlix-tv/actions/workflows/android-ci.yml)
@@ -10,31 +10,37 @@ A modern, **100% native Android TV streaming client** for movies and TV series f
 
 ---
 
-## ✨ Features
+## Features
 
 | Area | What you get |
 |---|---|
-| **Leanback UI** | Floating nav sidebar, full-bleed Hero billboard, Top-10 rail, swimlane rows, Continue Watching with progress |
-| **Player** | Token-preserving HLS playback, aspect-aware subtitles (transparent background, outlined white text), embedded + SubDL external subtitles, next-episode prompt |
+| **Navigation** | Transparent top nav bar over hero art with Home, Movies, Series, Genres, Search, and My List tabs plus a settings shortcut |
+| **Home hero** | Auto-rotating cinematic hero (8s interval, position dots), Top-10 rail, swimlane rows, Continue Watching with progress |
+| **Genres** | Genres tab with browsable grid plus genre detail screens |
+| **Collections** | Collections rail on home with dedicated collection detail screens |
+| **Detail** | Trailer button (movies and series) alongside Play, next-episode prompt |
+| **Player** | HLS playback with ABR damping, instant claim for unlocked streams, and seamless 24p frame-rate matching; aspect-aware subtitles (transparent background, outlined white text), embedded plus SubDL external subtitles |
+| **Input** | Full gamepad support plus TV remote media keys (play/pause, stop, rewind, fast-forward, next/previous) |
+| **Audio** | Audio stabilizer toggle for loudness normalization in settings |
 | **Settings** | Subtitle language, SubDL API key with connection test, cache/history management, hidden advanced diagnostics (resolver status, error log) |
 | **Self-maintenance** | Startup self-repair (corrupt prefs, cache), domain resolver with cached fallback, daily background update checks |
-| **Auto-update** | Checks GitHub releases, downloads and installs new versions on the TV itself |
+| **Auto-update** | Update checker with redirect-following probe; downloads and installs new versions on the TV itself |
 
 **Catalog source:** the app resolves the live IDLIX mirror at runtime from the canonical `https://idlix.net/` (redirect-follow, allowlisted hosts, fail-closed). No self-hosted server, no VPS, nothing to deploy.
 
 ---
 
-## 📥 Install
+## Install
 
 1. Download `idlix-tv-v*.apk` from the [releases page](https://github.com/trefeon/idlix-tv/releases).
 2. Follow **[TV_INSTALLATION_GUIDE.md](./TV_INSTALLATION_GUIDE.md)** — three sideload methods (phone transfer, USB stick, direct download), written for non-technical users.
 3. On first launch the app resolves the current mirror automatically; if a check fails, see *Troubleshooting* in the guide.
 
-> ⚠️ **Upgrading from v1.0.0?** Uninstall the old app first — v1.0.0 was unsigned and Android refuses to install the signed v1.0.1+ over it. Local watch history is cleared on uninstall.
+> **Note — upgrading from v1.0.0?** Uninstall the old app first — v1.0.0 was unsigned and Android refuses to install the signed v1.0.1+ over it. Local watch history is cleared on uninstall.
 
 ---
 
-## 🛠️ Build from source
+## Build from source
 
 **Prerequisites:** JDK 21, Android SDK (API 35), ~4 GB free disk.
 
@@ -65,7 +71,7 @@ Run the checks before pushing: `./gradlew :core:data:testDebugUnitTest :app-tv:t
 
 ---
 
-## 📁 Project structure
+## Project structure
 
 ```
 idlix-tv/
@@ -78,12 +84,12 @@ idlix-tv/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Issues and pull requests are welcome. Please: keep the TV UI D-pad navigable (every interactive element focusable with a visible ring), keep overscan-safe 48dp margins, add unit tests for new logic in `core/data`, and never commit `local.properties`, keystores, or API keys.
 
 ---
 
-## ⚖️ License & disclaimer
+## License & disclaimer
 
 MIT — see [LICENSE](./LICENSE). This is an **unofficial third-party client**, not affiliated with or endorsed by IDLIX. All content, artwork, and trademarks belong to their respective owners. Use it in compliance with your local laws and your streaming providers' terms.

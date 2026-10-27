@@ -2,6 +2,7 @@ package com.idlix.tv.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -75,17 +79,23 @@ fun TvMovieCard(
             .build()
     }
 
+    // Black halo outside the white ring: on bright (sky/white) artwork the
+    // 2dp white ring washes out, so a soft black shadow restores the
+    // selection read. B&W discipline kept (black/white only, no new colors).
+    var cardFocused by remember { mutableStateOf(false) }
+
     Card(
         onClick = onClick,
         modifier = modifier
             .width(width.dp)
             .height(height.dp)
             .onFocusChanged {
+                cardFocused = it.isFocused
                 if (it.isFocused) {
                     onFocus?.invoke()
                 }
             },
-        scale = CardDefaults.scale(focusedScale = 1.08f),
+        scale = CardDefaults.scale(focusedScale = 1.12f),
         glow = CardDefaults.glow(focusedGlow = Glow.None),
         shape = CardDefaults.shape(shape = CardShape),
         border = CardDefaults.border(
@@ -166,6 +176,17 @@ fun TvMovieCard(
                         )
                     }
                 }
+            }
+
+            // Dark inner edge (pairs with the white focus ring): 2dp black
+            // just inside the card edge so the selection boundary reads on
+            // bright artwork where the white ring alone washes out. B&W only.
+            if (cardFocused) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(2.dp, Color.Black, CardShape)
+                )
             }
         }
     }

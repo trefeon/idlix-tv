@@ -42,7 +42,8 @@ fun UpdateSettingsRow(
     onCheckClick: () -> Unit,
     onDownloadClick: () -> Unit,
     onInstallClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    checkButtonModifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
@@ -62,7 +63,8 @@ fun UpdateSettingsRow(
             is UpdateState.Idle -> {
                 UpdateButton(
                     label = stringResource(R.string.update_check),
-                    onClick = onCheckClick
+                    onClick = onCheckClick,
+                    modifier = checkButtonModifier
                 )
             }
             is UpdateState.Checking -> {
@@ -91,7 +93,8 @@ fun UpdateSettingsRow(
                 UpdateButton(
                     label = stringResource(R.string.update_check),
                     onClick = onCheckClick,
-                    primary = false
+                    primary = false,
+                    modifier = checkButtonModifier
                 )
             }
             is UpdateState.Available -> {
@@ -174,7 +177,8 @@ fun UpdateSettingsRow(
                 Spacer(modifier = Modifier.height(8.dp))
                 UpdateButton(
                     label = stringResource(R.string.update_retry),
-                    onClick = onCheckClick
+                    onClick = onCheckClick,
+                    modifier = checkButtonModifier
                 )
             }
         }
@@ -186,10 +190,12 @@ fun UpdateSettingsRow(
 private fun UpdateButton(
     label: String,
     onClick: () -> Unit,
-    primary: Boolean = true
+    primary: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     Button(
         onClick = onClick,
+        modifier = modifier,
         colors = ButtonDefaults.colors(
             containerColor = if (primary) NetflixRed else NetflixBlack,
             contentColor = NetflixWhite,

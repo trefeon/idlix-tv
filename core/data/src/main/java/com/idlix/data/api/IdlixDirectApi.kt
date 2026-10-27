@@ -2,6 +2,8 @@ package com.idlix.data.api
 
 import com.idlix.data.model.ClaimRequest
 import com.idlix.data.model.ClaimResponse
+import com.idlix.data.model.CollectionDetailResponse
+import com.idlix.data.model.CollectionListResponse
 import com.idlix.data.model.EpisodeResponse
 import com.idlix.data.model.GenreListResponse
 import com.idlix.data.model.MovieDetail
@@ -102,11 +104,15 @@ internal fun decodeBase64Url(input: String): String? {
 }
 
 /**
- * Server-synchronized countdown: `min(unlockAt - serverNow + 500, 16000)` ms,
- * falling back to 15s when the clock pair is unusable. Pure, unit-tested.
+ * Server-synchronized countdown: `min(unlockAt - serverNow + 500, 16000)` ms.
+ * Already unlocked (`unlockAt <= serverNow`) claims immediately — the server
+ * enforces the gate, so no client wait is needed; the claim retry loop covers
+ * the race. Falls back to 15s only when the clock pair is unusable.
+ * Pure, unit-tested.
  */
 fun countdownDelayMs(serverNow: Long, unlockAt: Long): Long {
-    if (serverNow <= 0 || unlockAt <= serverNow) return 15_000L
+    if (serverNow <= 0) return 15_000L
+    if (unlockAt <= serverNow) return 0L
     return minOf(unlockAt - serverNow + 500L, 16_000L).coerceAtLeast(0L)
 }
 
@@ -177,6 +183,17 @@ open class IdlixDirectApi {
         val body = getJson("api/genres")
         CoreHttp.json.decodeFromString(GenreListResponse.serializer(), body)
     }
+
+    open suspend fun getCollections(): CollectionListResponse = withContext(Dispatchers.IO) {
+        val body = getJson("api/collections")
+        CoreHttp.json.decodeFromString(CollectionListResponse.serializer(), body)
+    }
+
+    open suspend fun getCollectionDetail(slug: String): CollectionDetailResponse =
+        withContext(Dispatchers.IO) {
+            val body = getJson("api/collections/$slug")
+            CoreHttp.json.decodeFromString(CollectionDetailResponse.serializer(), body)
+        }
 
     open suspend fun search(query: String): SearchResponse {
         if (query.isBlank()) return SearchResponse()

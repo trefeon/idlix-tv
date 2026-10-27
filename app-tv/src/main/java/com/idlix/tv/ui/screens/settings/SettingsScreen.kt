@@ -35,7 +35,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +45,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -71,6 +75,8 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.screens.settings.components.UpdateSettingsRow
+import com.idlix.tv.ui.components.tvContentSidePadding
+import com.idlix.tv.ui.components.TvTopBarHeight
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
@@ -95,16 +101,42 @@ import com.idlix.tv.update.UpdateState
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel(),
+    // Bar DOWN target on the update-check button (see AppNavigation.contentEntryLink).
+    entryLinkRequester: FocusRequester? = null,
+    // Content-to-bar escape for scrolled rows (see topEdgeBarEscape).
+    barLinkRequester: FocusRequester? = null
 ) {
     val scrollState = rememberScrollState()
 
     val updateState by viewModel.updateState.collectAsState()
     val advancedUnlocked by viewModel.advancedUnlocked.collectAsState()
     val subtitleLang by viewModel.subtitleLanguage.collectAsState()
+    val stabilizerEnabled by viewModel.audioStabilizer.collectAsState()
     val cacheMessage by viewModel.cacheMessage.collectAsState()
     val historyCleared by viewModel.historyCleared.collectAsState()
 
+    // Update row owns entry focus: without this the screen opens with no
+    // focused node and D-pad input goes nowhere until the user backs out.
+    // Delayed like the detail screen: an immediate request fires before the
+    // window has focus and is silently dropped.
+    val checkFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            kotlinx.coroutines.delay(200)
+            checkFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
     var showHistoryConfirm by remember { mutableStateOf(false) }
+    // Safe option ("No") owns focus while the destructive confirm is visible,
+    // so a stray OK press can never land on "Yes, clear".
+    val historyNoFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(showHistoryConfirm) {
+        if (showHistoryConfirm) {
+            try {
+                historyNoFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
 
     Column(
         modifier = modifier
@@ -122,7 +154,8 @@ fun SettingsScreen(
                     else -> false
                 }
             }
-            .padding(horizontal = 36.dp, vertical = 24.dp),
+            .padding(horizontal = tvContentSidePadding(), vertical = 24.dp)
+            .padding(top = TvTopBarHeight),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         // ---- Header ------------------------------------------------------
@@ -160,6 +193,9 @@ fun SettingsScreen(
         UpdateSettingsRow(
             state = stateSnapshot,
             onCheckClick = viewModel::checkForUpdates,
+            checkButtonModifier = Modifier
+                .focusRequester(checkFocusRequester)
+                .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier),
             onDownloadClick = {
                 val available = stateSnapshot as? UpdateState.Available ?: return@UpdateSettingsRow
                 viewModel.downloadUpdate(available.assetUrl)
@@ -190,6 +226,25 @@ fun SettingsScreen(
                     label = stringResource(R.string.settings_subtitle_off),
                     selected = subtitleLang == SettingsViewModel.LANG_OFF,
                     onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_OFF) }
+                )
+            }
+        }
+
+        SettingsCard(
+            icon = Icons.Default.VolumeUp,
+            title = stringResource(R.string.settings_audio_title),
+            desc = stringResource(R.string.settings_audio_desc)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SubtitleOption(
+                    label = stringResource(R.string.settings_audio_on),
+                    selected = stabilizerEnabled,
+                    onClick = { viewModel.setAudioStabilizer(true) }
+                )
+                SubtitleOption(
+                    label = stringResource(R.string.settings_audio_off),
+                    selected = !stabilizerEnabled,
+                    onClick = { viewModel.setAudioStabilizer(false) }
                 )
             }
         }
@@ -243,7 +298,8 @@ fun SettingsScreen(
                     SettingsActionButton(
                         label = stringResource(R.string.settings_history_no),
                         icon = Icons.Default.Refresh,
-                        onClick = { showHistoryConfirm = false }
+                        onClick = { showHistoryConfirm = false },
+                        modifier = Modifier.focusRequester(historyNoFocusRequester)
                     )
                     SettingsActionButton(
                         label = stringResource(R.string.settings_history_yes),
@@ -401,6 +457,7 @@ private fun SettingsActionButton(
     icon: ImageVector,
     onClick: () -> Unit,
     destructive: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     Button(
         onClick = onClick,
@@ -421,7 +478,7 @@ private fun SettingsActionButton(
             )
         ),
         shape = ButtonDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
-        modifier = Modifier.height(38.dp)
+        modifier = modifier.height(38.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -478,13 +535,13 @@ private fun StatusLine(ok: Boolean, text: String) {
         Icon(
             imageVector = if (ok) Icons.Default.CheckCircle else Icons.Default.Error,
             contentDescription = text,
-            tint = if (ok) Color(0xFF4CAF50) else NetflixRed,
+            tint = if (ok) NetflixWhite else NetflixRed,
             modifier = Modifier.size(18.dp)
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = text,
-            color = if (ok) Color(0xFF4CAF50) else NetflixRed,
+            color = if (ok) NetflixWhite else NetflixRed,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
         )

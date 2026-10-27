@@ -52,7 +52,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -297,7 +301,7 @@ fun TvPlayerControls(
                             contentDescription = if (isPlaying) stringResource(R.string.pause) else stringResource(R.string.play),
                             modifier = Modifier
                                 .size(36.dp)
-                                .then(if (!isPlaying) Modifier.offset(x = 2.dp) else Modifier)
+                                .then(if (!isPlaying) Modifier.offset(x = (-2).dp) else Modifier)
                         )
                     }
                 }
@@ -601,7 +605,35 @@ fun TvPlayerControls(
                                 .then(speedButtonModifier)
                                 .focusProperties {
                                     up = seekBarFocusRequester
+                                    left = subtitleFocusRequester
                                     right = qualityFocusRequester
+                                }
+                                // Circular transport row: Speed <-> Quality <->
+                                // Subtitle. Key routing carries the loop even
+                                // where the outer focusProperties below stay
+                                // inert on the tv Button (belt & suspenders,
+                                // same idiom as the search tag row).
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.DirectionLeft -> {
+                                            try {
+                                                subtitleFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        }
+                                        Key.DirectionRight -> {
+                                            try {
+                                                qualityFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        }
+                                        else -> false
+                                    }
                                 }
                         ) {
                             Row(
@@ -648,6 +680,28 @@ fun TvPlayerControls(
                                     left = speedFocusRequester
                                     right = subtitleFocusRequester
                                 }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.DirectionLeft -> {
+                                            try {
+                                                speedFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        }
+                                        Key.DirectionRight -> {
+                                            try {
+                                                subtitleFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        }
+                                        else -> false
+                                    }
+                                }
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -691,6 +745,29 @@ fun TvPlayerControls(
                                 .focusProperties {
                                     up = seekBarFocusRequester
                                     left = qualityFocusRequester
+                                    right = speedFocusRequester
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.DirectionLeft -> {
+                                            try {
+                                                qualityFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        }
+                                        Key.DirectionRight -> {
+                                            try {
+                                                speedFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        }
+                                        else -> false
+                                    }
                                 }
                         ) {
                             Row(

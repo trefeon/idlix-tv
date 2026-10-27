@@ -2,6 +2,7 @@ package com.idlix.tv.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -86,7 +87,7 @@ fun TvContinueWatchingCard(
             .width(width.dp)
             .height(height.dp)
             .onFocusChanged { isFocused = it.isFocused },
-        scale = CardDefaults.scale(focusedScale = 1.08f),
+        scale = CardDefaults.scale(focusedScale = 1.12f),
         glow = CardDefaults.glow(focusedGlow = Glow.None),
         shape = CardDefaults.shape(shape = ContinueCardShape),
         border = CardDefaults.border(
@@ -186,6 +187,16 @@ fun TvContinueWatchingCard(
                             .background(NetflixRed, RoundedCornerShape(1.5.dp))
                     )
                 }
+            }
+
+            // Dark inner edge (pairs with the white focus ring) so the
+            // selection boundary reads on bright backdrops too. B&W only.
+            if (isFocused) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(2.dp, Color.Black, ContinueCardShape)
+                )
             }
         }
     }

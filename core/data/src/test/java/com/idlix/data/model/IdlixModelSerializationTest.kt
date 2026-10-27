@@ -193,4 +193,56 @@ class IdlixModelSerializationTest {
         assertEquals(1, pagination.page)
         assertEquals(20, pagination.limit)
     }
+
+    @Test
+    fun seriesTrailerUrlParses() {
+        val parsed = CoreHttp.json.decodeFromString<SeriesDetail>(
+            """{"id":"s1","title":"BB","slug":"bb","trailerUrl":"https://www.youtube.com/watch?v=abc123"}"""
+        )
+        assertEquals("https://www.youtube.com/watch?v=abc123", parsed.trailerUrl)
+    }
+
+    @Test
+    fun seriesTrailerUrlMissingDefaultsNull() {
+        val parsed = CoreHttp.json.decodeFromString<SeriesDetail>(
+            """{"id":"s1","title":"BB","slug":"bb","unknownFutureKey":1}"""
+        )
+        assertNull(parsed.trailerUrl)
+    }
+
+    @Test
+    fun collectionsListDeserializesWithDefaults() {
+        val parsed = CoreHttp.json.decodeFromString<CollectionListResponse>(
+            """{"collections":[{"id":"c1","slug":"mcu","title":"Marvel Cinematic Universe","kind":"universe","itemCount":56,"extra":true}]}"""
+        )
+        assertEquals(1, parsed.collections.size)
+        val item = parsed.collections[0]
+        assertEquals("mcu", item.slug)
+        assertEquals("universe", item.kind)
+        assertEquals(56, item.itemCount)
+        assertNull(item.posterPath)
+
+        val empty = CoreHttp.json.decodeFromString<CollectionListResponse>("{}")
+        assertTrue(empty.collections.isEmpty())
+    }
+
+    @Test
+    fun collectionDetailSectionsMapToMovieItems() {
+        val parsed = CoreHttp.json.decodeFromString<CollectionDetailResponse>(
+            """{"collection":{"id":"c1","slug":"mcu","title":"MCU"},"sections":[{"id":"ph1","slug":"phase-one","title":"Phase One","itemCount":2,"items":[{"id":"m1","title":"Iron Man","slug":"iron-man-2008","posterPath":"/p.jpg","voteAverage":"7.66","quality":"BLU-RAY","contentType":"movie"},{"id":"s1","title":"Loki","slug":"loki-2021","firstAirDate":"2021-06-09","contentType":"tv_series"}]}]}"""
+        )
+        assertEquals("MCU", parsed.collection.title)
+        assertEquals(1, parsed.sections.size)
+        val section = parsed.sections[0]
+        assertEquals("Phase One", section.title)
+        assertEquals(2, section.items.size)
+
+        val movie = section.items[0].toMovieItem()
+        assertEquals("movie", movie.contentType)
+        assertEquals("https://image.tmdb.org/t/p/w342/p.jpg", movie.fullPosterUrl)
+
+        val series = section.items[1].toMovieItem()
+        assertEquals("tv_series", series.contentType)
+        assertEquals("2021-06-09", series.releaseDate)
+    }
 }

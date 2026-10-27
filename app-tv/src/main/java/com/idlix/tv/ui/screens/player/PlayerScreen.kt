@@ -46,6 +46,8 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -64,15 +66,9 @@ import com.idlix.tv.ui.theme.NetflixWhite
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-fun letterboxBottomPadding(viewW: Float, viewH: Float, videoW: Float, videoH: Float): Float {
-    if (viewW <= 0f || viewH <= 0f || videoW <= 0f || videoH <= 0f) return 0.08f
-    val videoAspect = videoW / videoH
-    if (videoAspect <= 0f) return 0.08f
-    val displayedH = viewW / videoAspect
-    val barFraction = ((viewH - displayedH) / 2f / viewH).coerceAtLeast(0f)
-    if (barFraction <= 0f) return 0.08f
-    return (barFraction + 0.04f).coerceIn(0.08f, 0.50f)
-}
+// Subtitles sit at a fixed fraction of the SCREEN height, independent of the
+// video aspect: identical placement for 16:9, 21:9, 4:3 on any panel.
+private const val SubtitleBottomFraction = 0.08f
 
 @OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
 @Composable
@@ -108,35 +104,54 @@ fun PlayerScreen(
     val playButtonFocusRequester = remember { FocusRequester() }
 
     var activePlayer: ExoPlayer? by remember { mutableStateOf(null) }
+    // Loudness normalizer ("Audio stabilizer"): session-bound INSERT effect,
+    // toggle-gated. Same package as PlayerQualityPrefs, no import needed.
+    val audioStabilizer = remember { AudioStabilizer() }
     val qualityReturnFocusRequester = remember { FocusRequester() }
     var isQualityPickerVisible by remember { mutableStateOf(false) }
     var selectedQuality by remember { mutableStateOf(loadPlaybackQuality(context)) }
     // Zoom-fill aspect holder as a stable State object so the PlayerView
-    // factory's padding listeners always read the live value (FIT math
-    // would lift subtitles too high once Zoom removes the letterbox bars).
+    // update block always reads the live value.
     val zoomState = remember { mutableStateOf(loadVideoZoom(context)) }
     var isZoom by zoomState
     var availableHeights by remember { mutableStateOf(emptySet<Int>()) }
     var videoW by remember { mutableIntStateOf(0) }
     var videoH by remember { mutableIntStateOf(0) }
     var bufferedPos by remember { mutableLongStateOf(0L) }
-    var qualityDismissReturn by remember { mutableStateOf(false) }
     fun closeQualityPicker() {
         isQualityPickerVisible = false
-        qualityDismissReturn = true
+        // Re-show controls so the invoker button exists when focus returns.
+        showControls = true
+        // Deferred in the close path itself (not a keyed effect): guaranteed
+        // to launch whenever the picker closes, and ordered after the Play
+        // re-show so the invoker wins deterministically.
+        scope.launch {
+            delay(200)
+            try {
+                qualityReturnFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
     }
     val speedReturnFocusRequester = remember { FocusRequester() }
-    var subtitleDismissReturn by remember { mutableStateOf(false) }
     val subtitleReturnFocusRequester = remember { FocusRequester() }
     var isSpeedPickerVisible by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableStateOf(loadPlaybackSpeed(context)) }
     var availableAudioTracks by remember { mutableStateOf(emptyList<TvAudioOption>()) }
     var selectedAudioLang by remember { mutableStateOf(loadAudioLanguage(context)) }
     val tryAgainFocusRequester = remember { FocusRequester() }
-    var speedDismissReturn by remember { mutableStateOf(false) }
     fun closeSpeedPicker() {
         isSpeedPickerVisible = false
-        speedDismissReturn = true
+        // Re-show controls so the invoker button exists when focus returns.
+        showControls = true
+        // Deferred in the close path itself (not a keyed effect): guaranteed
+        // to launch whenever the picker closes, and ordered after the Play
+        // re-show so the invoker wins deterministically.
+        scope.launch {
+            delay(200)
+            try {
+                speedReturnFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
     }
 
     LaunchedEffect(contentType, contentId) {
@@ -182,44 +197,6 @@ fun PlayerScreen(
             } catch (e: Exception) {}
         }
     }
-    // Return focus to the Quality button after the picker closes. Controls
-    // recompose visible in the same frame the modal flag flips, so the request
-    // is deferred past recomposition instead of firing inside onDismiss.
-    LaunchedEffect(isQualityPickerVisible, qualityDismissReturn) {
-        if (!isQualityPickerVisible && qualityDismissReturn) {
-            qualityDismissReturn = false
-            delay(50)
-            try {
-                qualityReturnFocusRequester.requestFocus()
-            } catch (_: Exception) {}
-        }
-    }
-
-    // Return focus to the Speed button after the picker closes (same deferred
-    // pattern as the quality picker).
-    LaunchedEffect(isSpeedPickerVisible, speedDismissReturn) {
-        if (!isSpeedPickerVisible && speedDismissReturn) {
-            speedDismissReturn = false
-            delay(50)
-            try {
-                speedReturnFocusRequester.requestFocus()
-            } catch (_: Exception) {}
-        }
-    }
-
-    // Return focus to the Subtitle button after the picker closes (same
-    // deferred pattern as the quality/speed pickers — previously focus was
-    // left wherever the modal had it, a D-pad dead zone).
-    LaunchedEffect(uiState.isSubtitlePickerVisible, subtitleDismissReturn) {
-        if (!uiState.isSubtitlePickerVisible && subtitleDismissReturn) {
-            subtitleDismissReturn = false
-            delay(50)
-            try {
-                subtitleReturnFocusRequester.requestFocus()
-            } catch (_: Exception) {}
-        }
-    }
-
     // Default focus on Try Again as soon as a playback error renders.
     LaunchedEffect(uiState.error) {
         if (uiState.error != null) {
@@ -324,7 +301,13 @@ fun PlayerScreen(
                                 true
                             } else if (uiState.isSubtitlePickerVisible) {
                                 viewModel.closeSubtitlePicker()
-                                subtitleDismissReturn = true
+                                showControls = true
+                                scope.launch {
+                                    delay(200)
+                                    try {
+                                        subtitleReturnFocusRequester.requestFocus()
+                                    } catch (_: Exception) {}
+                                }
                                 true
                             } else if (isNextPromptVisible) {
                                 viewModel.dismissNextEpisode()
@@ -361,6 +344,59 @@ fun PlayerScreen(
                             }
                             showControls = true
                             true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_STOP -> {
+                            activePlayer?.pause()
+                            showControls = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else {
+                                activePlayer?.let { p ->
+                                    p.seekTo((p.currentPosition - 10000L).coerceAtLeast(0L))
+                                }
+                                showControls = true
+                                true
+                            }
+                        }
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else {
+                                activePlayer?.let { p ->
+                                    val dur = p.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+                                    p.seekTo((p.currentPosition + 10000L).coerceAtMost(dur))
+                                }
+                                showControls = true
+                                true
+                            }
+                        }
+                        KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else if (uiState.nextEpisode != null && !uiState.isNextEpisodeDismissed) {
+                                viewModel.playNextEpisode()
+                                true
+                            } else false
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else {
+                                activePlayer?.seekTo(0L)
+                                showControls = true
+                                true
+                            }
+                        }
+                        KeyEvent.KEYCODE_MENU -> {
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else {
+                                showControls = true
+                                true
+                            }
                         }
                         KeyEvent.KEYCODE_DPAD_LEFT -> {
                             if (isNextPromptVisible) {
@@ -408,26 +444,14 @@ fun PlayerScreen(
                 TvLoadingSpinner()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (uiState.countdownSeconds > 0) {
-                    Text(
-                        text = stringResource(R.string.loading_secure_stream),
-                        color = NetflixWhite,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = stringResource(R.string.starting_in_seconds, uiState.countdownSeconds),
-                        color = NetflixLightGray,
-                        fontSize = 14.sp
-                    )
-                } else {
-                    Text(
-                        text = stringResource(R.string.connecting_to_media),
-                        color = NetflixLightGray,
-                        fontSize = 14.sp
-                    )
-                }
+                // Generic loading only: the gate wait is real but its length
+                // is not the user's business — no countdown shown.
+                Text(
+                    text = stringResource(R.string.loading_secure_stream),
+                    color = NetflixWhite,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         } else if (uiState.error != null) {
             Column(
@@ -503,12 +527,13 @@ fun PlayerScreen(
             val exoPlayer = remember(context, resolved.hlsMasterUrl) {
                 val renderersFactory = MediaSourceHelper.createRenderersFactory(context)
 
-                // P0 streaming backlog: deeper buffers to ride out mirror stalls.
+                // P0 streaming backlog: deep max buffers ride out mirror stalls;
+                // lean start threshold for a faster first frame.
                 val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
                         30000,
                         60000,
-                        2500,
+                        1500,
                         5000
                     )
                     .setPrioritizeTimeOverSizeThresholds(true)
@@ -520,9 +545,16 @@ fun PlayerScreen(
                     .setInitialBitrateEstimate(4_000_000L)
                     .build()
 
+                // ABR damping: steadier rungs on mirror-CDN variance (segment-boundary
+                // policy only, zero GPU cost). Deep 30s/60s buffers tolerate near-defaults.
+                val trackSelector = DefaultTrackSelector(
+                    context,
+                    AdaptiveTrackSelection.Factory(15000, 25000, 25000, 0.7f)
+                )
                 ExoPlayer.Builder(context, renderersFactory)
                     .setLoadControl(loadControl)
                     .setBandwidthMeter(bandwidthMeter)
+                    .setTrackSelector(trackSelector)
                     .build().apply {
                     val activeSub = resolved.subtitles.firstOrNull { it.lang == "id" }
                         ?: resolved.subtitles.firstOrNull()
@@ -534,6 +566,8 @@ fun PlayerScreen(
                         .setPreferredTextLanguage("id")
                         .setSelectUndeterminedTextLanguage(true)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        // Floor kills the sub-SD mush rung; user quality caps still win above.
+                        .setMinVideoBitrate(800_000)
                         .apply {
                             loadAudioLanguage(context)?.let { setPreferredAudioLanguage(it) }
                         }
@@ -545,6 +579,11 @@ fun PlayerScreen(
                     // Restore the persisted playback speed (no rebuffer).
                     applyPlaybackSpeed(this, loadPlaybackSpeed(context))
 
+                    // 24p films on 60 Hz panels: seamless refresh switch kills judder.
+                    setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
+                    // Loudness normalizer: registers the session listener now so
+                    // the effect binds as soon as the audio session appears.
+                    audioStabilizer.attach(this, loadAudioStabilizer(context))
                     prepare()
                     if (uiState.initialPositionMs > 0) {
                         seekTo(uiState.initialPositionMs)
@@ -642,6 +681,7 @@ fun PlayerScreen(
                         }
                     } catch (_: Exception) {}
                     activePlayer = null
+                    audioStabilizer.detach(exoPlayer)
                     exoPlayer.release()
                 }
             }
@@ -668,30 +708,7 @@ fun PlayerScreen(
                                 )
                             )
                             subs.setFractionalTextSize(0.053f) // Standard Netflix TV subtitle proportion
-                            subs.setBottomPaddingFraction(0.08f)
-                            fun refreshPadding(videoSize: VideoSize = exoPlayer.videoSize) {
-                                // Zoom fills the frame (no letterbox bars), so
-                                // subtitles fall back to the 0.08 default;
-                                // FIT keeps the letterbox-derived lift.
-                                subs.setBottomPaddingFraction(
-                                    if (zoomState.value) 0.08f
-                                    else letterboxBottomPadding(
-                                        width.toFloat(),
-                                        height.toFloat(),
-                                        videoSize.width.toFloat(),
-                                        videoSize.height.toFloat()
-                                    )
-                                )
-                            }
-                            val subtitleSizeListener = object : Player.Listener {
-                                override fun onVideoSizeChanged(videoSize: VideoSize) {
-                                    refreshPadding(videoSize)
-                                }
-                            }
-                            exoPlayer.addListener(subtitleSizeListener)
-                            // Stashed for onRelease so the listener is removed with the view.
-                            setTag(subtitleSizeListener)
-                            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> refreshPadding() }
+                            subs.setBottomPaddingFraction(SubtitleBottomFraction)
                         }
                     }
                 },
@@ -699,20 +716,6 @@ fun PlayerScreen(
                 // update so zoom/FIT changes apply even when resizeMode matches.
                 update = { view ->
                     applyVideoZoom(view, isZoom)
-                    view.subtitleView?.setBottomPaddingFraction(
-                        if (isZoom) 0.08f
-                        else letterboxBottomPadding(
-                            view.width.toFloat(),
-                            view.height.toFloat(),
-                            exoPlayer.videoSize.width.toFloat(),
-                            exoPlayer.videoSize.height.toFloat()
-                        )
-                    )
-                },
-                onRelease = { view ->
-                    try {
-                        (view.getTag() as? Player.Listener)?.let { exoPlayer.removeListener(it) }
-                    } catch (_: Exception) {}
                 },
             )
 
@@ -808,20 +811,38 @@ fun PlayerScreen(
                 onSelectTrack = { track ->
                     viewModel.selectSubtitleTrack(track)
                     applySubtitleTrack(track)
-                    subtitleDismissReturn = true
+                    showControls = true
+                    scope.launch {
+                        delay(200)
+                        try {
+                            subtitleReturnFocusRequester.requestFocus()
+                        } catch (_: Exception) {}
+                    }
                 },
                 onSelectSubdl = { subdl ->
                     viewModel.selectSubdlSubtitle(subdl) { newTrack ->
                         applySubtitleTrack(newTrack)
                     }
-                    subtitleDismissReturn = true
+                    showControls = true
+                    scope.launch {
+                        delay(200)
+                        try {
+                            subtitleReturnFocusRequester.requestFocus()
+                        } catch (_: Exception) {}
+                    }
                 },
                 onSearchSubdlClick = {
                     viewModel.searchSubdlSubtitles()
                 },
                 onDismiss = {
                     viewModel.closeSubtitlePicker()
-                    subtitleDismissReturn = true
+                    showControls = true
+                    scope.launch {
+                        delay(200)
+                        try {
+                            subtitleReturnFocusRequester.requestFocus()
+                        } catch (_: Exception) {}
+                    }
                 },
                 availableAudioTracks = availableAudioTracks,
                 selectedAudioLanguage = selectedAudioLang,

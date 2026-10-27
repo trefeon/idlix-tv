@@ -1,6 +1,8 @@
 package com.idlix.tv.ui.screens.detail
 
 import androidx.compose.foundation.BorderStroke
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,12 +27,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import com.idlix.data.local.WatchHistoryStore
@@ -43,9 +50,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -59,6 +66,8 @@ import com.idlix.tv.R
 import com.idlix.data.model.CastMember
 import com.idlix.data.model.EpisodeItem
 import com.idlix.tv.ui.components.TvLoadingSpinner
+import com.idlix.tv.ui.components.railFocusFrame
+import com.idlix.tv.ui.components.tvDetailHeaderHeight
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixGold
@@ -133,15 +142,17 @@ fun DetailScreen(
             val genres = (uiState.movie?.genres ?: uiState.series?.genres ?: emptyList()).joinToString(", ") { it.name }
             val castList = uiState.movie?.cast ?: uiState.series?.cast ?: emptyList()
 
-            TvLazyColumn(
+            LazyColumn(
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Header & Info
+                // Header & Info: viewport-relative (78% of real screen height,
+                // clamped 300..420) so the Play CTA stays above the fold on the
+                // 411dp rig; a fixed 420dp header buried it below the fold.
                 item {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(420.dp)
+                            .height(tvDetailHeaderHeight())
                     ) {
                         AsyncImage(
                             model = backdropUrl,
@@ -237,7 +248,7 @@ fun DetailScreen(
                                     val percent = ((vote * 10).toInt()).coerceIn(0, 100)
                                     Text(
                                         text = stringResource(R.string.match_score_format, percent),
-                                        color = Color(0xFF46D369),
+                                        color = NetflixWhite,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -314,7 +325,7 @@ fun DetailScreen(
                                     fontSize = 13.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.width(600.dp)
+                                    modifier = Modifier.widthIn(max = 600.dp)
                                 )
                             }
 
@@ -326,7 +337,7 @@ fun DetailScreen(
                                 fontSize = 14.sp,
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.width(600.dp)
+                                modifier = Modifier.widthIn(max = 600.dp)
                             )
 
                             Spacer(modifier = Modifier.height(14.dp))
@@ -346,68 +357,110 @@ fun DetailScreen(
                                 contentType == "movie" -> stringResource(R.string.play_now)
                                 else -> stringResource(R.string.play_episode_1)
                             }
-                            Button(
-                                onClick = {
-                                    if (contentType == "movie") {
-                                        uiState.movie?.let {
-                                            onNavigateToPlayer("movie", it.id, it.title, it.fullPosterUrl, it.fullBackdropUrl, it.slug, null, null)
-                                        }
-                                    } else {
-                                        val resume = resumeItem
-                                        if (resume != null) {
-                                            onNavigateToPlayer(
-                                                resume.contentType,
-                                                resume.contentId,
-                                                resume.title,
-                                                resume.posterUrl,
-                                                resume.backdropUrl,
-                                                resume.slug,
-                                                resume.seasonNumber,
-                                                resume.episodeNumber
-                                            )
+                            // Trailer, when the detail payload carries one (movies and
+                            // series alike): opens the YouTube URL in the system
+                            // handler. Secondary to Play — dark card, white ring.
+                            val trailerUrl = uiState.movie?.trailerUrl
+                                ?: uiState.series?.trailerUrl
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = {
+                                        if (contentType == "movie") {
+                                            uiState.movie?.let {
+                                                onNavigateToPlayer("movie", it.id, it.title, it.fullPosterUrl, it.fullBackdropUrl, it.slug, null, null)
+                                            }
                                         } else {
-                                            val firstEp = uiState.episodes.firstOrNull()
-                                                ?: uiState.series?.defaultSeason?.episodes?.firstOrNull()
-                                            if (firstEp != null) {
+                                            val resume = resumeItem
+                                            if (resume != null) {
                                                 onNavigateToPlayer(
-                                                    "episode",
-                                                    firstEp.id,
-                                                    "${uiState.series?.title} - ${firstEp.name}",
-                                                    firstEp.fullStillUrl,
-                                                    uiState.series?.fullBackdropUrl,
-                                                    uiState.series?.slug,
-                                                    uiState.selectedSeason?.seasonNumber ?: 1,
-                                                    firstEp.episodeNumber
+                                                    resume.contentType,
+                                                    resume.contentId,
+                                                    resume.title,
+                                                    resume.posterUrl,
+                                                    resume.backdropUrl,
+                                                    resume.slug,
+                                                    resume.seasonNumber,
+                                                    resume.episodeNumber
                                                 )
+                                            } else {
+                                                val firstEp = uiState.episodes.firstOrNull()
+                                                    ?: uiState.series?.defaultSeason?.episodes?.firstOrNull()
+                                                if (firstEp != null) {
+                                                    onNavigateToPlayer(
+                                                        "episode",
+                                                        firstEp.id,
+                                                        "${uiState.series?.title} - ${firstEp.name}",
+                                                        firstEp.fullStillUrl,
+                                                        uiState.series?.fullBackdropUrl,
+                                                        uiState.series?.slug,
+                                                        uiState.selectedSeason?.seasonNumber ?: 1,
+                                                        firstEp.episodeNumber
+                                                    )
+                                                }
                                             }
                                         }
-                                    }
-                                },
-                                colors = ButtonDefaults.colors(
-                                    containerColor = NetflixRed,
-                                    contentColor = NetflixWhite,
-                                    focusedContainerColor = NetflixRed,
-                                    focusedContentColor = NetflixWhite
-                                ),
-                                scale = ButtonDefaults.scale(focusedScale = 1.08f),
-                                border = ButtonDefaults.border(
-                                    focusedBorder = Border(
-                                        border = BorderStroke(2.dp, NetflixWhite)
+                                    },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = NetflixRed,
+                                        contentColor = NetflixWhite,
+                                        focusedContainerColor = NetflixRed,
+                                        focusedContentColor = NetflixWhite
+                                    ),
+                                    scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                                    border = ButtonDefaults.border(
+                                        focusedBorder = Border(
+                                            border = BorderStroke(2.dp, NetflixWhite)
+                                        )
+                                    ),
+                                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                                    modifier = Modifier.focusRequester(playButtonFocusRequester)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = stringResource(R.string.play)
                                     )
-                                ),
-                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
-                                modifier = Modifier.focusRequester(playButtonFocusRequester)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = stringResource(R.string.play)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = playLabel,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
-                                )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = playLabel,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                                if (!trailerUrl.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Button(
+                                        onClick = {
+                                            try {
+                                                context.startActivity(
+                                                    Intent(
+                                                        Intent.ACTION_VIEW,
+                                                        Uri.parse(trailerUrl)
+                                                    )
+                                                )
+                                            } catch (_: Exception) {
+                                            }
+                                        },
+                                        colors = ButtonDefaults.colors(
+                                            containerColor = NetflixDarkCard,
+                                            contentColor = NetflixWhite,
+                                            focusedContainerColor = NetflixWhite,
+                                            focusedContentColor = NetflixBlack
+                                        ),
+                                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                                        border = ButtonDefaults.border(
+                                            focusedBorder = Border(
+                                                border = BorderStroke(2.dp, NetflixWhite)
+                                            )
+                                        ),
+                                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.trailer),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -427,7 +480,7 @@ fun DetailScreen(
                             Spacer(modifier = Modifier.height(10.dp))
 
                             // Seasons Row
-                            TvLazyRow(
+                            LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 items(uiState.series?.seasons ?: emptyList()) { season ->
@@ -467,25 +520,36 @@ fun DetailScreen(
                                     TvLoadingSpinner()
                                 }
                             } else {
-                                TvLazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.focusRestorer()
                                 ) {
                                     items(uiState.episodes, key = { it.id }) { ep ->
-                                        TvEpisodeCard(
-                                            episode = ep,
-                                            onClick = {
-                                                onNavigateToPlayer(
-                                                    "episode",
-                                                    ep.id,
-                                                    "${uiState.series?.title} - ${ep.name}",
-                                                    ep.fullStillUrl,
-                                                    uiState.series?.fullBackdropUrl,
-                                                    uiState.series?.slug,
-                                                    uiState.selectedSeason?.seasonNumber ?: 1,
-                                                    ep.episodeNumber
-                                                )
-                                            }
-                                        )
+                                        // 12dp focus frame: the row sits 48dp
+                                        // from the edge, but an UP-arrival can
+                                        // settle the card at the viewport top —
+                                        // the frame keeps the ring intact.
+                                        Box(
+                                            Modifier
+                                                .railFocusFrame()
+                                                .padding(vertical = 12.dp)
+                                        ) {
+                                            TvEpisodeCard(
+                                                episode = ep,
+                                                onClick = {
+                                                    onNavigateToPlayer(
+                                                        "episode",
+                                                        ep.id,
+                                                        "${uiState.series?.title} - ${ep.name}",
+                                                        ep.fullStillUrl,
+                                                        uiState.series?.fullBackdropUrl,
+                                                        uiState.series?.slug,
+                                                        uiState.selectedSeason?.seasonNumber ?: 1,
+                                                        ep.episodeNumber
+                                                    )
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -505,8 +569,9 @@ fun DetailScreen(
                                 modifier = Modifier.padding(bottom = 10.dp)
                             )
 
-                            TvLazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.focusRestorer()
                             ) {
                                 items(castList.take(12), key = { it.id }) { cast ->
                                     TvCastCard(cast = cast)
@@ -526,11 +591,15 @@ fun TvEpisodeCard(
     episode: EpisodeItem,
     onClick: () -> Unit
 ) {
+    // Black halo outside the white ring so the selection reads on bright
+    // stills too (same B&W-only treatment as the rail cards).
+    var epFocused by remember { mutableStateOf(false) }
     Card(
         onClick = onClick,
         modifier = Modifier
             .width(220.dp)
-            .height(180.dp),
+            .height(180.dp)
+            .onFocusChanged { epFocused = it.isFocused },
         shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = CardDefaults.colors(
             containerColor = NetflixDarkCard
@@ -542,7 +611,8 @@ fun TvEpisodeCard(
             )
         )
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -592,6 +662,17 @@ fun TvEpisodeCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            // Dark inner edge (pairs with the white focus ring) so the
+            // selection boundary reads on bright stills too. B&W only.
+            if (epFocused) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(2.dp, Color.Black, RoundedCornerShape(8.dp))
+                )
+            }
             }
         }
     }

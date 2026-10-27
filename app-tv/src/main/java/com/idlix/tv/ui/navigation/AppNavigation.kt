@@ -3,17 +3,32 @@ package com.idlix.tv.ui.navigation
 import android.view.KeyEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.idlix.tv.ui.components.NavItem
-import com.idlix.tv.ui.components.TvNavDrawer
+import com.idlix.tv.ui.components.TopBarTab
+import com.idlix.tv.ui.components.TvTopBar
 import com.idlix.tv.ui.screens.detail.DetailScreen
+import com.idlix.tv.ui.screens.collections.CollectionDetailScreen
+import com.idlix.tv.ui.screens.genres.GenreDetailScreen
+import com.idlix.tv.ui.screens.genres.GenresScreen
 import com.idlix.tv.ui.screens.history.ContinueWatchingScreen
 import com.idlix.tv.ui.screens.home.HomeScreen
 import com.idlix.tv.ui.screens.movies.MoviesScreen
@@ -32,19 +47,54 @@ fun AppNavigation(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Home.route
 
-    val selectedNavItem = when {
-        currentRoute.startsWith("search") -> NavItem.SEARCH
-        currentRoute.startsWith("continue_watching") -> NavItem.CONTINUE_WATCHING
-        currentRoute.startsWith("movies") -> NavItem.MOVIES
-        currentRoute.startsWith("series") -> NavItem.SERIES
-        currentRoute.startsWith("settings") -> NavItem.SETTINGS
-        else -> NavItem.HOME
-    }
+    val selectedTab = TopBarTab.fromRoute(currentRoute)
+    val settingsSelected = currentRoute.startsWith(Screen.Settings.route)
 
     val isFullScreenRoute = currentRoute.startsWith("player") || currentRoute.startsWith("detail")
 
-    // consumes BUTTON_B itself, so this bubbling handler only fires on routes
-    // where Back currently does nothing for gamepads. Remote paths untouched.
+    // Same-card refocus keys, one per tab. Hoisted ABOVE the dual-NavHost
+    // switch: navigating to detail swaps the whole host, disposing the tab
+    // screens AND their remember/rememberSaveable state — an in-screen key
+    // dies there and back-nav always falls back to hero Play. AppNavigation
+    // itself stays composed across the swap, so plain remember survives.
+    var homeRefocusKey by remember { mutableStateOf<String?>(null) }
+    var moviesRefocusKey by remember { mutableStateOf<String?>(null) }
+    var seriesRefocusKey by remember { mutableStateOf<String?>(null) }
+    var genresRefocusKey by remember { mutableStateOf<String?>(null) }
+    var genreDetailRefocusKey by remember { mutableStateOf<String?>(null) }
+    var collectionDetailRefocusKey by remember { mutableStateOf<String?>(null) }
+
+    // Scroll states, hoisted for the same reason as the refocus keys: the tab
+    // screens dispose on detail, so their lazy scroll would reset to 0 and an
+    // off-screen originating card would never recompose to take focus back.
+    // The return effect scrolls these back to the originating rail + card.
+    val homeListState = rememberLazyListState()
+    val moviesListState = rememberLazyListState()
+    val seriesListState = rememberLazyListState()
+    val genresGridState = rememberLazyGridState()
+    val genreDetailListState = rememberLazyListState()
+    val collectionDetailListState = rememberLazyListState()
+    // Rail states by "tab:railId", created on demand and stable thereafter.
+    val railListStates = remember { mutableMapOf<String, LazyListState>() }
+    val homeRailStates = remember { { railId: String -> railListStates.getOrPut("home:$railId") { LazyListState() } } }
+    val moviesRailStates = remember { { railId: String -> railListStates.getOrPut("movies:$railId") { LazyListState() } } }
+    val seriesRailStates = remember { { railId: String -> railListStates.getOrPut("series:$railId") { LazyListState() } } }
+    val genreDetailRailStates = remember { { railId: String -> railListStates.getOrPut("genre:$railId") { LazyListState() } } }
+    val collectionDetailRailStates = remember { { railId: String -> railListStates.getOrPut("collection:$railId") { LazyListState() } } }
+
+    // Bar-to-content entry link: plain focus search dies crossing the
+    // floating-bar overlay boundary into LazyColumn content, so every tab/gear
+    // DOWN targets this requester. Each bar-route screen attaches it to its
+    // entry node (alongside its local requester) — one destination is composed
+    // at a time, so the shared instance is unambiguous.
+    val contentEntryLink = remember { FocusRequester() }
+    // Content-to-bar escape link: content scrolled under the transparent bar
+    // escapes preview-UP to the selected tab/gear via topEdgeBarEscape (plain
+    // UP search has no strictly-above candidate there). Attached by TvTopBar
+    // to the selected tab only — again one node at a time.
+    val barTabLink = remember { FocusRequester() }
+    // Gamepad B mirrors system Back on routes where Back otherwise does
+    // nothing for gamepads. Remote paths untouched.
     val gamepadBackHandler = Modifier.onKeyEvent { keyEvent ->
         if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
             keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_B
@@ -57,65 +107,108 @@ fun AppNavigation(
     }
 
     if (isFullScreenRoute) {
-        // Render without side drawer
+        // Render without top bar
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
             modifier = modifier.then(gamepadBackHandler)
         ) {
-            setupNavRoutes(navController)
+            setupNavRoutes(
+                navController,
+                homeRefocusKey, { homeRefocusKey = it },
+                moviesRefocusKey, { moviesRefocusKey = it },
+                seriesRefocusKey, { seriesRefocusKey = it },
+                genresRefocusKey, { genresRefocusKey = it },
+                genreDetailRefocusKey, { genreDetailRefocusKey = it },
+                collectionDetailRefocusKey, { collectionDetailRefocusKey = it },
+                homeListState, homeRailStates,
+                moviesListState, moviesRailStates,
+                seriesListState, seriesRailStates,
+                genresGridState,
+                genreDetailListState, genreDetailRailStates,
+                collectionDetailListState, collectionDetailRailStates,
+                contentEntryLink, barTabLink
+            )
         }
     } else {
-        // Render inside Collapsible TvNavDrawer
-        TvNavDrawer(
-            selectedItem = selectedNavItem,
-            onItemSelected = { item ->
-                when (item) {
-                    NavItem.HOME -> navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                    NavItem.SEARCH -> navController.navigate(Screen.Search.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                    NavItem.CONTINUE_WATCHING -> navController.navigate(Screen.ContinueWatching.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                    NavItem.MOVIES -> navController.navigate(Screen.Movies.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                    NavItem.SERIES -> navController.navigate(Screen.Series.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                    NavItem.SETTINGS -> navController.navigate(Screen.Settings.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            },
-            modifier = modifier.then(gamepadBackHandler)
-        ) {
+        // Non-fullscreen routes: transparent floating bar over full-bleed
+        // content (web-style). Hero screens bleed art under the bar; text
+        // screens carry their own TvTopBarHeight top inset.
+        Box(modifier = modifier.then(gamepadBackHandler)) {
             NavHost(
                 navController = navController,
-                startDestination = Screen.Home.route
+                startDestination = Screen.Home.route,
+                modifier = Modifier.fillMaxSize()
             ) {
-                setupNavRoutes(navController)
+                setupNavRoutes(
+                    navController,
+                    homeRefocusKey, { homeRefocusKey = it },
+                    moviesRefocusKey, { moviesRefocusKey = it },
+                    seriesRefocusKey, { seriesRefocusKey = it },
+                    genresRefocusKey, { genresRefocusKey = it },
+                    genreDetailRefocusKey, { genreDetailRefocusKey = it },
+                    collectionDetailRefocusKey, { collectionDetailRefocusKey = it },
+                    homeListState, homeRailStates,
+                    moviesListState, moviesRailStates,
+                    seriesListState, seriesRailStates,
+                    genresGridState,
+                    genreDetailListState, genreDetailRailStates,
+                    collectionDetailListState, collectionDetailRailStates,
+                    contentEntryLink, barTabLink
+                )
             }
+            TvTopBar(
+                selectedTab = selectedTab,
+                downFocusRequester = contentEntryLink,
+                tabFocusLink = barTabLink,
+                onTabSelected = { tab ->
+                    navController.navigate(tab.route) {
+                        popUpTo(Screen.Home.route) { inclusive = tab == TopBarTab.HOME }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onSettingsClick = {
+                    navController.navigate(Screen.Settings.route) {
+                        popUpTo(Screen.Home.route)
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                settingsSelected = settingsSelected,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
 }
 
 private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
-    navController: androidx.navigation.NavHostController
+    navController: androidx.navigation.NavHostController,
+    homeRefocusKey: String?,
+    onHomeRefocusKeyChange: (String?) -> Unit,
+    moviesRefocusKey: String?,
+    onMoviesRefocusKeyChange: (String?) -> Unit,
+    seriesRefocusKey: String?,
+    onSeriesRefocusKeyChange: (String?) -> Unit,
+    genresRefocusKey: String?,
+    onGenresRefocusKeyChange: (String?) -> Unit,
+    genreDetailRefocusKey: String?,
+    onGenreDetailRefocusKeyChange: (String?) -> Unit,
+    collectionDetailRefocusKey: String?,
+    onCollectionDetailRefocusKeyChange: (String?) -> Unit,
+    homeListState: LazyListState,
+    homeRailStates: (String) -> LazyListState,
+    moviesListState: LazyListState,
+    moviesRailStates: (String) -> LazyListState,
+    seriesListState: LazyListState,
+    seriesRailStates: (String) -> LazyListState,
+    genresGridState: LazyGridState,
+    genreDetailListState: LazyListState,
+    genreDetailRailStates: (String) -> LazyListState,
+    collectionDetailListState: LazyListState,
+    collectionDetailRailStates: (String) -> LazyListState,
+    contentEntryLink: FocusRequester,
+    barTabLink: FocusRequester
 ) {
     composable(Screen.Home.route) {
         HomeScreen(
@@ -124,7 +217,16 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
             },
             onNavigateToPlayer = { type, id, title, poster, backdrop, slug, season, episode ->
                 navController.navigate(Screen.Player.createRoute(type, id, title, poster, backdrop, slug, season, episode))
-            }
+            },
+            onNavigateToCollection = { slug, name ->
+                navController.navigate(Screen.CollectionDetail.createRoute(slug, name))
+            },
+            refocusKey = homeRefocusKey,
+            onRefocusKeyChange = onHomeRefocusKeyChange,
+            listState = homeListState,
+            railListStates = homeRailStates,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
         )
     }
 
@@ -137,7 +239,8 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
                 navController.navigate(Screen.Home.route) {
                     popUpTo(Screen.Home.route) { inclusive = true }
                 }
-            }
+            },
+            entryLinkRequester = contentEntryLink
         )
     }
 
@@ -148,7 +251,13 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
             },
             onNavigateToPlayer = { type, id, title, poster, backdrop, slug ->
                 navController.navigate(Screen.Player.createRoute(type, id, title, poster, backdrop, slug))
-            }
+            },
+            refocusKey = moviesRefocusKey,
+            onRefocusKeyChange = onMoviesRefocusKeyChange,
+            listState = moviesListState,
+            railListStates = moviesRailStates,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
         )
     }
 
@@ -159,7 +268,13 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
             },
             onNavigateToPlayer = { type, id, title, poster, backdrop, slug ->
                 navController.navigate(Screen.Player.createRoute(type, id, title, poster, backdrop, slug))
-            }
+            },
+            refocusKey = seriesRefocusKey,
+            onRefocusKeyChange = onSeriesRefocusKeyChange,
+            listState = seriesListState,
+            railListStates = seriesRailStates,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
         )
     }
 
@@ -167,12 +282,95 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
         SearchScreen(
             onNavigateToDetail = { type, slug ->
                 navController.navigate(Screen.Detail.createRoute(type, slug))
+            },
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
+        )
+    }
+
+    composable(Screen.Genres.route) {
+        GenresScreen(
+            onNavigateToGenre = { slug, name ->
+                navController.navigate(Screen.GenreDetail.createRoute(slug, name))
+            },
+            refocusKey = genresRefocusKey,
+            onRefocusKeyChange = onGenresRefocusKeyChange,
+            gridState = genresGridState,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
+        )
+    }
+
+    composable(
+        route = Screen.GenreDetail.route,
+        arguments = listOf(
+            navArgument("slug") { type = NavType.StringType },
+            navArgument("name") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = ""
             }
+        )
+    ) { backStackEntry ->
+        val slug = backStackEntry.arguments?.getString("slug") ?: ""
+        val rawName = backStackEntry.arguments?.getString("name") ?: ""
+        val name = try {
+            URLDecoder.decode(rawName, StandardCharsets.UTF_8.toString())
+        } catch (e: Exception) {
+            rawName
+        }
+        GenreDetailScreen(
+            genreSlug = slug,
+            genreName = name.ifBlank { slug },
+            onNavigateToDetail = { type, detailSlug ->
+                navController.navigate(Screen.Detail.createRoute(type, detailSlug))
+            },
+            onBack = { navController.popBackStack() },
+            refocusKey = genreDetailRefocusKey,
+            onRefocusKeyChange = onGenreDetailRefocusKeyChange,
+            listState = genreDetailListState,
+            railListStates = genreDetailRailStates,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
+        )
+    }
+
+    composable(
+        route = Screen.CollectionDetail.route,
+        arguments = listOf(
+            navArgument("slug") { type = NavType.StringType },
+            navArgument("name") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = ""
+            }
+        )
+    ) { backStackEntry ->
+        val slug = backStackEntry.arguments?.getString("slug") ?: ""
+        val rawName = backStackEntry.arguments?.getString("name") ?: ""
+        val name = try {
+            URLDecoder.decode(rawName, StandardCharsets.UTF_8.toString())
+        } catch (e: Exception) {
+            rawName
+        }
+        CollectionDetailScreen(
+            collectionSlug = slug,
+            collectionName = name.ifBlank { slug },
+            onNavigateToDetail = { type, detailSlug ->
+                navController.navigate(Screen.Detail.createRoute(type, detailSlug))
+            },
+            onBack = { navController.popBackStack() },
+            refocusKey = collectionDetailRefocusKey,
+            onRefocusKeyChange = onCollectionDetailRefocusKeyChange,
+            listState = collectionDetailListState,
+            railListStates = collectionDetailRailStates,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
         )
     }
 
     composable(Screen.Settings.route) {
-        SettingsScreen()
+        SettingsScreen(entryLinkRequester = contentEntryLink, barLinkRequester = barTabLink)
     }
 
     composable(

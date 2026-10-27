@@ -8,6 +8,8 @@ import com.idlix.data.cache.DirectSourceCache.Companion.DETAIL_TTL_MS
 import com.idlix.data.cache.DirectSourceCache.Companion.GENRE_TTL_MS
 import com.idlix.data.cache.DirectSourceCache.Companion.LIST_TTL_MS
 import com.idlix.data.cache.DirectSourceCache.Companion.SEARCH_TTL_MS
+import com.idlix.data.model.CollectionDetailResponse
+import com.idlix.data.model.CollectionListResponse
 import com.idlix.data.model.EpisodeResponse
 import com.idlix.data.model.GenreListResponse
 import com.idlix.data.model.MovieDetail
@@ -49,6 +51,8 @@ import java.util.concurrent.ConcurrentHashMap
  * | `getSeriesDetail` → null | `GET api/series/{slug}`, cached [DETAIL_TTL_MS] |
  * | `getEpisodeDetail` → null | `GET api/series/{slug}/season/{s}/episode/{e}`, cached [DETAIL_TTL_MS] |
  * | `getGenres` (new) | `GET api/genres`, cached [GENRE_TTL_MS] |
+ * | `getCollections` (new) | `GET api/collections`, cached [GENRE_TTL_MS] |
+ * | `getCollectionDetail` (new) | `GET api/collections/{slug}`, cached [DETAIL_TTL_MS] |
  * | `search` → `emptyList()` | `GET api/search?q=`, cached [SEARCH_TTL_MS]; blank query → empty, no network |
  * | `prewarmStream` → no-op | starts the unlock countdown early; result is NOT cached |
  * | `resolveStream` → failure("not yet wired") | full gate chain; `series` normalizes to first episode; failures carry honest copy |
@@ -152,6 +156,30 @@ class IdlixRepository(
             cache.put(key, it, GENRE_TTL_MS)
         }
     }
+
+    /**
+     * Curated collections index. Cached [GENRE_TTL_MS]: editorial content
+     * that changes as rarely as the genre list, not per-request catalog data.
+     */
+    suspend fun getCollections(): CollectionListResponse = withContext(Dispatchers.IO) {
+        val key = "collections"
+        cache.get(key, CollectionListResponse::class.java) ?: api.getCollections().also {
+            cache.put(key, it, GENRE_TTL_MS)
+        }
+    }
+
+    /**
+     * One collection with its phase sections and per-title entries. Cached
+     * [DETAIL_TTL_MS] like movie/series details (title lists, same staleness).
+     */
+    suspend fun getCollectionDetail(slug: String): CollectionDetailResponse? =
+        withContext(Dispatchers.IO) {
+            val key = "collection|$slug"
+            cache.get(key, CollectionDetailResponse::class.java)
+                ?: api.getCollectionDetail(slug).also {
+                    cache.put(key, it, DETAIL_TTL_MS)
+                }
+        }
 
     suspend fun search(query: String): List<SearchResultItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()

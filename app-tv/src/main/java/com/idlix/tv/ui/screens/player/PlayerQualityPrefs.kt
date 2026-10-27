@@ -130,9 +130,8 @@ fun saveVideoZoom(context: Context, zoom: Boolean) {
 
 /**
  * Applies the aspect live on an existing PlayerView (no ExoPlayer rebuild).
- * Zoom-aware subtitle rule lives with the caller: Zoom has no letterbox bars,
- * so the subtitle bottom padding falls back to the 0.12 default; FIT keeps
- * the letterbox-derived padding.
+ * Subtitles are aspect-independent (fixed screen-fraction padding), so Zoom
+ * needs no subtitle adjustment.
  */
 fun applyVideoZoom(
     playerView: androidx.media3.ui.PlayerView,
@@ -225,6 +224,36 @@ fun saveAudioLanguage(context: Context, language: String?) {
             edit.putString(KEY_AUDIO_LANGUAGE, language)
         }
         edit.apply()
+    } catch (_: Exception) {
+    }
+}
+
+private const val KEY_AUDIO_STABILIZER = "audio_stabilizer"
+
+/**
+ * Loudness normalizer ("Audio stabilizer") toggle.
+ *
+ * Same pattern as zoom: persisted in `idlix_tv_prefs`, default ON. Read at
+ * player creation and in Settings; the player binds the session effect only
+ * when this is true.
+ */
+fun loadAudioStabilizer(context: Context): Boolean {
+    return try {
+        context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUDIO_STABILIZER, true)
+    } catch (_: Exception) {
+        true
+    }
+}
+
+fun saveAudioStabilizer(context: Context, enabled: Boolean) {
+    try {
+        context
+            .getSharedPreferences(PLAYER_PREFS_FILE, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUDIO_STABILIZER, enabled)
+            .apply()
     } catch (_: Exception) {
     }
 }

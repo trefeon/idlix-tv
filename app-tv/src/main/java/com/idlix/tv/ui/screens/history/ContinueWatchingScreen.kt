@@ -29,14 +29,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.tv.foundation.lazy.grid.TvGridCells
-import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -45,6 +47,8 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvContinueWatchingCard
+import com.idlix.tv.ui.components.TvTopBarHeight
+import com.idlix.tv.ui.components.railFocusFrame
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
@@ -57,10 +61,41 @@ fun ContinueWatchingScreen(
     onNavigateToPlayer: (contentType: String, contentId: String, title: String, poster: String?, backdrop: String?, slug: String?, season: Int?, episode: Int?) -> Unit,
     onNavigateToHome: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: ContinueWatchingViewModel = viewModel()
+    viewModel: ContinueWatchingViewModel = viewModel(),
+    // Bar DOWN target on the first Play button (see AppNavigation.contentEntryLink).
+    entryLinkRequester: FocusRequester? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showClearConfirm by remember { mutableStateOf(false) }
+    // Safe option ("No") owns focus while the destructive confirm is visible,
+    // so a stray OK press can never land on "Yes, clear".
+    val cancelFocusRequester = remember { FocusRequester() }
+    // First Play owns entry focus (empty state parks on Explore instead).
+    // Delayed like the detail screens: local history resolves instantly,
+    // mid nav-transition, and an immediate request is silently dropped.
+    // First-entry gated so deletes/clears never yank focus back to the top.
+    val firstPlayFocusRequester = remember { FocusRequester() }
+    val exploreFocusRequester = remember { FocusRequester() }
+    var firstEntry by remember { mutableStateOf(true) }
+    LaunchedEffect(uiState.items, showClearConfirm) {
+        if (showClearConfirm || !firstEntry) return@LaunchedEffect
+        firstEntry = false
+        kotlinx.coroutines.delay(120)
+        try {
+            if (uiState.items.isNotEmpty()) {
+                firstPlayFocusRequester.requestFocus()
+            } else {
+                exploreFocusRequester.requestFocus()
+            }
+        } catch (_: Exception) {}
+    }
+    LaunchedEffect(showClearConfirm) {
+        if (showClearConfirm) {
+            try {
+                cancelFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
     LaunchedEffect(Unit) {
         viewModel.loadHistory()
     }
@@ -70,6 +105,7 @@ fun ContinueWatchingScreen(
             .fillMaxSize()
             .background(NetflixBlack)
             .padding(horizontal = 48.dp, vertical = 20.dp)
+            .padding(top = TvTopBarHeight)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header
@@ -150,7 +186,8 @@ fun ContinueWatchingScreen(
                                         border = BorderStroke(2.dp, NetflixWhite)
                                     )
                                 ),
-                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
+                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                                modifier = Modifier.focusRequester(cancelFocusRequester)
                             ) {
                                 Text(text = stringResource(R.string.settings_history_no), fontSize = 14.sp)
                             }
@@ -215,6 +252,9 @@ fun ContinueWatchingScreen(
                         Spacer(modifier = Modifier.height(18.dp))
                         Button(
                             onClick = onNavigateToHome,
+                            modifier = Modifier
+                                .focusRequester(exploreFocusRequester)
+                                .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier),
                             colors = ButtonDefaults.colors(
                                 containerColor = NetflixRed,
                                 contentColor = NetflixWhite,
@@ -234,8 +274,8 @@ fun ContinueWatchingScreen(
                     }
                 }
             } else {
-                TvLazyVerticalGrid(
-                    columns = TvGridCells.Adaptive(230.dp),
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(230.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -244,24 +284,31 @@ fun ContinueWatchingScreen(
                         .weight(1f)
                 ) {
                     items(uiState.items, key = { it.contentId }) { item ->
+                        val isFirst = item == uiState.items.firstOrNull()
                         Column {
-                            TvContinueWatchingCard(
-                                item = item,
-                                onClick = {
-                                    onNavigateToPlayer(
-                                        item.contentType,
-                                        item.contentId,
-                                        item.title,
-                                        item.posterUrl,
-                                        item.backdropUrl,
-                                        item.slug,
-                                        item.seasonNumber,
-                                        item.episodeNumber
-                                    )
-                                },
-                                width = 230,
-                                height = 140
-                            )
+                            Box(
+                                Modifier
+                                    .railFocusFrame()
+                                    .padding(vertical = 12.dp)
+                            ) {
+                                TvContinueWatchingCard(
+                                    item = item,
+                                    onClick = {
+                                        onNavigateToPlayer(
+                                            item.contentType,
+                                            item.contentId,
+                                            item.title,
+                                            item.posterUrl,
+                                            item.backdropUrl,
+                                            item.slug,
+                                            item.seasonNumber,
+                                            item.episodeNumber
+                                        )
+                                    },
+                                    width = 230,
+                                    height = 140
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -288,10 +335,13 @@ fun ContinueWatchingScreen(
                                     ),
                                     scale = ButtonDefaults.scale(focusedScale = 1.05f),
                                     border = ButtonDefaults.border(
-                                        focusedBorder = Border(BorderStroke(1.5.dp, NetflixWhite))
+                                        focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
                                     ),
                                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(4.dp)),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .then(if (isFirst) Modifier.focusRequester(firstPlayFocusRequester) else Modifier)
+                                        .then(if (isFirst && entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
@@ -312,7 +362,7 @@ fun ContinueWatchingScreen(
                                     ),
                                     scale = ButtonDefaults.scale(focusedScale = 1.05f),
                                     border = ButtonDefaults.border(
-                                        focusedBorder = Border(BorderStroke(1.5.dp, NetflixWhite))
+                                        focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
                                     ),
                                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(4.dp))
                                 ) {

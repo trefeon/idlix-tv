@@ -58,6 +58,7 @@ data class MovieDetail(
     val viewCount: Long = 0,
     val quality: String? = null,
     val country: String? = null,
+    val certification: String? = null,
     val genres: List<Genre> = emptyList(),
     val cast: List<CastMember> = emptyList(),
     val trailerUrl: String? = null

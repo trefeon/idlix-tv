@@ -46,11 +46,26 @@ object UpdateChecker {
 
     // No-redirect client, independent from the catalog resolver: redirects ARE
     // the signal here (Location -> tag), so followRedirects must stay off.
+    // Used ONLY for the .../releases/latest tag redirect below.
     private val noRedirectClient by lazy {
         CoreHttp.okHttpClient.newBuilder()
             .followRedirects(false)
             .followSslRedirects(false)
             .callTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .build()
+    }
+
+    // Redirect-following client for the asset probe: .../releases/download/...
+    // answers 302 to objects.githubusercontent.com, so a no-redirect probe
+    // would always observe 302 and report "no asset" for an existing APK.
+    private val followClient by lazy {
+        CoreHttp.okHttpClient.newBuilder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .callTimeout(15, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
@@ -76,13 +91,33 @@ object UpdateChecker {
                         context.getString(R.string.update_err_bad_data)
                     )
             }
-            // 2. Deterministic asset URL; 200 (or range-GET 200/206) = installable.
+            // 2. Decide BEFORE probing: an up-to-date install needs no asset
+            // network at all (and a probe 302 must never mask UpToDate).
             val assetUrl = assetUrlForTag(tag)
+            when (
+                decideRelease(
+                    tagName = tag,
+                    appVersionName = BuildConfig.VERSION_NAME,
+                    currentVersionCode = currentVersionCode,
+                    assetUrl = assetUrl,
+                    sizeBytes = 0L
+                )
+            ) {
+                is ReleaseDecision.UpToDate ->
+                    return@withContext UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+                is ReleaseDecision.BadData ->
+                    return@withContext UpdateState.Failed(
+                        context.getString(R.string.update_err_bad_data)
+                    )
+                else -> {}
+            }
+            // 3. Probe the asset (redirect-following: download URLs 302);
+            // 200 (or range-GET 200/206) = installable.
             val sizeBytes = probeAssetSize(assetUrl)
                 ?: return@withContext UpdateState.Failed(
                     context.getString(R.string.update_err_no_asset)
                 )
-            // 3. Semver-vs-versionName decides; trailing int is only a fallback.
+            // 4. Semver-vs-versionName decides; trailing int is only a fallback.
             return@withContext when (
                 val decision = decideRelease(
                     tagName = tag,
@@ -121,7 +156,7 @@ object UpdateChecker {
     private fun probeAssetSize(assetUrl: String): Long? {
         var headCode = 0
         var headLength: String? = null
-        noRedirectClient.newCall(
+        followClient.newCall(
             Request.Builder().url(assetUrl).head().build()
         ).execute().use { head ->
             headCode = head.code
@@ -130,7 +165,7 @@ object UpdateChecker {
         if (headCode == 200) return parseContentLength(headLength)
         var rangeCode: Int? = null
         var rangeLength: String? = null
-        noRedirectClient.newCall(
+        followClient.newCall(
             Request.Builder().url(assetUrl)
                 .header("Range", "bytes=0-0")
                 .get().build()

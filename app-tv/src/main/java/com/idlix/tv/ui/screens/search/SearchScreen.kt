@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -40,6 +41,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -49,11 +51,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.tv.foundation.lazy.grid.TvGridCells
-import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.items
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -63,6 +65,8 @@ import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.components.TvMovieCard
+import com.idlix.tv.ui.components.TvTopBarHeight
+import com.idlix.tv.ui.components.railFocusFrame
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
@@ -74,10 +78,16 @@ import com.idlix.tv.ui.theme.NetflixWhite
 fun SearchScreen(
     onNavigateToDetail: (contentType: String, slug: String) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: SearchViewModel = viewModel()
+    viewModel: SearchViewModel = viewModel(),
+    // Bar DOWN target on the search field (see AppNavigation.contentEntryLink).
+    entryLinkRequester: FocusRequester? = null,
+    // Content-to-bar escape for the field (see topEdgeBarEscape): at rest the
+    // field sits under the transparent bar and plain UP dies.
+    barLinkRequester: FocusRequester? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     val searchFieldFocusRequester = remember { FocusRequester() }
     val clearButtonFocusRequester = remember { FocusRequester() }
@@ -131,6 +141,7 @@ fun SearchScreen(
             .fillMaxSize()
             .background(NetflixBlack)
             .padding(horizontal = 48.dp, vertical = 20.dp)
+            .padding(top = TvTopBarHeight)
     ) {
         // Search Input Bar
         val isBarFocused = isInputFocused || isClearFocused
@@ -181,6 +192,31 @@ fun SearchScreen(
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(searchFieldFocusRequester)
+                    .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
+                    .onPreviewKeyEvent { keyEvent ->
+                        // Text fields hold an input session that can veto an
+                        // outgoing transfer: release it first, then move UP.
+                        // (Top-bar escape: plain search has no strictly-above
+                        // candidate once content scrolls under the floating bar.)
+                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionUp) {
+                            val link = barLinkRequester
+                            if (link != null) {
+                                try {
+                                    focusManager.clearFocus(force = true)
+                                } catch (_: Exception) {}
+                                try {
+                                    link.requestFocus()
+                                    true
+                                } catch (_: Exception) {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    }
                     .focusProperties {
                         down = if (uiState.query.isBlank()) firstTagFocusRequester else firstResultFocusRequester
                         right = if (uiState.query.isNotEmpty()) clearButtonFocusRequester else FocusRequester.Default
@@ -221,9 +257,8 @@ fun SearchScreen(
                                         false
                                     }
                                 }
-                                Key.DirectionUp -> {
-                                    true // Prevent focus escaping up to nav rail / home
-                                }
+                                // UP intentionally falls through: the top bar
+                                // owns the row above the field.
                                 else -> false
                             }
                         } else {
@@ -295,8 +330,23 @@ fun SearchScreen(
                                             true
                                         }
                                     }
+                                    // UP goes home to the top bar (same input-
+                                    // session release as the field, for safety).
                                     Key.DirectionUp -> {
-                                        true
+                                        val link = barLinkRequester
+                                        if (link != null) {
+                                            try {
+                                                focusManager.clearFocus(force = true)
+                                            } catch (_: Exception) {}
+                                            try {
+                                                link.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        }
                                     }
                                     else -> false
                                 }
@@ -328,8 +378,9 @@ fun SearchScreen(
                             fontSize = 14.sp,
                     modifier = Modifier.padding(end = 8.dp)
                 )
-                TvLazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.focusRestorer()
                 ) {
                     items(quickSearches) { tag ->
                         val isFirstTag = tag == quickSearches.firstOrNull()
@@ -446,8 +497,8 @@ fun SearchScreen(
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else {
-                TvLazyVerticalGrid(
-                    columns = TvGridCells.Adaptive(135.dp),
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(135.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -459,34 +510,43 @@ fun SearchScreen(
                 ) {
                     items(uiState.results, key = { it.id }) { item ->
                         val isFirst = item == uiState.results.firstOrNull()
-                        TvMovieCard(
-                            title = item.title,
-                            posterUrl = item.fullPosterUrl,
-                            rating = item.formattedRating,
-                            quality = item.quality ?: if (item.contentType == "tv_series") {
-                                stringResource(R.string.content_badge_series)
-                            } else {
-                                stringResource(R.string.content_badge_movie)
-                            },
-                            onClick = { onNavigateToDetail(item.contentType, item.slug) },
-                            modifier = Modifier
-                                .then(if (isFirst) Modifier.focusRequester(firstResultFocusRequester) else Modifier)
-                                .focusProperties {
-                                    up = searchFieldFocusRequester
-                                }
-                                .onPreviewKeyEvent { keyEvent ->
-                                    if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionUp && isFirst) {
-                                        try {
-                                            searchFieldFocusRequester.requestFocus()
-                                            true
-                                        } catch (_: Exception) {
+                        // 12dp focus frame: grid cells sit 48dp from the
+                        // overscan edge; the frame keeps the 1.12x ring
+                        // intact when a row settles at the viewport edge.
+                        Box(
+                            Modifier
+                                .railFocusFrame()
+                                .padding(vertical = 12.dp)
+                        ) {
+                            TvMovieCard(
+                                title = item.title,
+                                posterUrl = item.fullPosterUrl,
+                                rating = item.formattedRating,
+                                quality = item.quality ?: if (item.contentType == "tv_series") {
+                                    stringResource(R.string.content_badge_series)
+                                } else {
+                                    stringResource(R.string.content_badge_movie)
+                                },
+                                onClick = { onNavigateToDetail(item.contentType, item.slug) },
+                                modifier = Modifier
+                                    .then(if (isFirst) Modifier.focusRequester(firstResultFocusRequester) else Modifier)
+                                    .focusProperties {
+                                        up = searchFieldFocusRequester
+                                    }
+                                    .onPreviewKeyEvent { keyEvent ->
+                                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionUp && isFirst) {
+                                            try {
+                                                searchFieldFocusRequester.requestFocus()
+                                                true
+                                            } catch (_: Exception) {
+                                                false
+                                            }
+                                        } else {
                                             false
                                         }
-                                    } else {
-                                        false
                                     }
-                                }
-                        )
+                            )
+                        }
                     }
                 }
             }

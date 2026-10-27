@@ -114,8 +114,12 @@ class IdlixDirectSourceTest {
     @Test
     fun countdownDelayFallsBackOnBadClock() {
         assertEquals(15_000L, countdownDelayMs(serverNow = 0L, unlockAt = 10_000L))
-        assertEquals(15_000L, countdownDelayMs(serverNow = 5_000L, unlockAt = 5_000L))
-        assertEquals(15_000L, countdownDelayMs(serverNow = 9_000L, unlockAt = 1_000L))
+    }
+
+    @Test
+    fun countdownDelaySkipsWaitWhenAlreadyUnlocked() {
+        assertEquals(0L, countdownDelayMs(serverNow = 5_000L, unlockAt = 5_000L))
+        assertEquals(0L, countdownDelayMs(serverNow = 9_000L, unlockAt = 1_000L))
     }
 
     // ---------------------------------------------------------- isChallenge

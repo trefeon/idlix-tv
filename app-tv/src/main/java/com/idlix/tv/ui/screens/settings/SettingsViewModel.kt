@@ -12,6 +12,8 @@ import com.idlix.data.repository.SubdlRepository
 import com.idlix.tv.BuildConfig
 import com.idlix.tv.R
 import com.idlix.tv.startup.ErrorLog
+import com.idlix.tv.ui.screens.player.loadAudioStabilizer
+import com.idlix.tv.ui.screens.player.saveAudioStabilizer
 import com.idlix.tv.update.UpdateChecker
 import com.idlix.tv.update.UpdateDownloader
 import com.idlix.tv.update.UpdateInstaller
@@ -177,6 +179,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (code != LANG_INDONESIAN && code != LANG_ENGLISH && code != LANG_OFF) return
         userPrefs.edit().putString(KEY_SUBTITLE_LANG, code).apply()
         _subtitleLanguage.value = code
+    }
+
+    // ------------------------------------------------------- audio stabilizer
+    private val _audioStabilizer = MutableStateFlow(loadAudioStabilizer(app))
+    val audioStabilizer: StateFlow<Boolean> = _audioStabilizer.asStateFlow()
+
+    fun setAudioStabilizer(enabled: Boolean) {
+        saveAudioStabilizer(app, enabled)
+        _audioStabilizer.value = enabled
     }
 
     // ------------------------------------------------------------- user care

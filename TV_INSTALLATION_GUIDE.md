@@ -1,10 +1,10 @@
-# 📺 Installing IDLIX on Android TV & Google TV (For Non-Technical Users)
+# Installing IDLIX on Android TV & Google TV (For Non-Technical Users)
 
 > Part of [IDLIX for Android TV](./README.md). Developers: see the main README's build guide instead.
 
 This guide is for anyone who wants to install the IDLIX app on a Smart TV, Android TV Box, or Google TV — no technical skills, laptop, or coding required. To update an already-installed app, see [Updating](#-updating-the-app) at the bottom.
 
-## 📋 Requirements
+## Requirements
 
 Before you start, prepare the following:
 1. **TV device**: Android TV, Google TV, or a TV Box (e.g. Mi TV Stick, Chromecast with Google TV, Xiaomi Box, Realme TV Stick, Aqua, Coocaa, TCL, etc.).
@@ -13,7 +13,7 @@ Before you start, prepare the following:
 
 ---
 
-## ⚙️ Required Step: Allow "Unknown Sources"
+## Required Step: Allow "Unknown Sources"
 
 Android TV blocks app installs from outside the Google Play Store by default. Follow these steps once:
 
@@ -33,11 +33,11 @@ Android TV blocks app installs from outside the Google Play Store by default. Fo
 
 ---
 
-## 🚀 Pick an Install Method (Choose One)
+## Pick an Install Method (Choose One)
 
 There are 3 easy methods — pick whichever fits your TV:
 
-### 🔹 Method 1: Using Your Phone (Most Practical, No Cables / USB)
+### Method 1: Using Your Phone (Most Practical, No Cables / USB)
 
 *Highly recommended for Mi TV Stick or Chromecast, which have no USB port.*
 
@@ -76,7 +76,7 @@ There are 3 easy methods — pick whichever fits your TV:
 
 ---
 
-### 🔹 Method 3: Using the "Downloader" App (Download Directly on the TV)
+### Method 3: Using the "Downloader" App (Download Directly on the TV)
 
 1. Open the **Google Play Store** on the TV, search for and install **Downloader by AFTVnews**.
 2. Open **Downloader** on the TV.
@@ -86,7 +86,7 @@ There are 3 easy methods — pick whichever fits your TV:
 
 ---
 
-## ❓ Frequently Asked Questions & Troubleshooting
+## Frequently Asked Questions & Troubleshooting
 
 ### 1. Getting a "Blocked by Play Protect" warning?
 * **Cause**: the app is sideloaded manually, from outside the official Play Store.
@@ -104,8 +104,8 @@ There are 3 easy methods — pick whichever fits your TV:
 
 ---
 
-## 🔄 Updating the app
+## Updating the app
 
 The app checks for new versions automatically once a day. When an update is available, open **Settings** in the app and follow the update prompt — it downloads and installs without a computer.
 
-> ⚠️ **Coming from v1.0.0?** Uninstall the old app first (v1.0.0 was unsigned; the signed v1.0.1+ cannot install over it). Your local watch history will be cleared. All later versions update in place.
+> **Note — coming from v1.0.0?** Uninstall the old app first (v1.0.0 was unsigned; the signed v1.0.1+ cannot install over it). Your local watch history will be cleared. All later versions update in place.

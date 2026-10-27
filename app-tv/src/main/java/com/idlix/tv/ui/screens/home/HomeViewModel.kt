@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.idlix.data.local.WatchHistoryStore
+import com.idlix.data.model.CollectionItem
 import com.idlix.data.model.MovieItem
 import com.idlix.data.model.SeriesItem
 import com.idlix.data.model.WatchHistoryItem
@@ -21,6 +22,7 @@ data class HomeUiState(
     val popularMovies: List<MovieItem> = emptyList(),
     val popularSeries: List<SeriesItem> = emptyList(),
     val actionMovies: List<MovieItem> = emptyList(),
+    val collections: List<CollectionItem> = emptyList(),
     val error: String? = null,
     val errorRes: Int? = null
 )
@@ -73,6 +75,11 @@ class HomeViewModel(
 
                 val action = repository.getMoviesByGenre("action")
 
+                // Collections are a browse-assist rail, never a gate: a failed
+                // fetch degrades to no rail, it must not blank Home.
+                val collections = runCatching { repository.getCollections().collections }
+                    .getOrNull() ?: emptyList()
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     heroMovie = trending.firstOrNull() ?: popular.firstOrNull(),
@@ -80,6 +87,7 @@ class HomeViewModel(
                     popularMovies = popular,
                     popularSeries = series,
                     actionMovies = action,
+                    collections = collections,
                     error = null,
                     errorRes = null
                 )

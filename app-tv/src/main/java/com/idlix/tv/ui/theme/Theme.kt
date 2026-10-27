@@ -5,6 +5,9 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
+// Wave A B&W scheme: static dark scheme only (no dynamic color). Red appears
+// solely via primary/primaryContainer (brand, selected-tab indicator,
+// progress, badges) on a monochrome black/white/gray base.
 @OptIn(ExperimentalTvMaterial3Api::class)
 private val DarkColorScheme = darkColorScheme(
     primary = NetflixRed,
