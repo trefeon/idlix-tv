@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -112,6 +114,14 @@ fun TvPlayerControls(
     val speedFocusRequester = remember { FocusRequester() }
     val internalPlayFocusRequester = remember { FocusRequester() }
     val seekBarFocusRequester = remember { FocusRequester() }
+    val rewindFocusRequester = remember { FocusRequester() }
+    val forwardFocusRequester = remember { FocusRequester() }
+
+    // Last-focused restore: re-show returns to the invoker/last control, not
+    // always Play. lastCenterRequester keeps the transport column so UP from
+    // the seekbar returns to the same Rewind/Play/Forward button.
+    var lastFocusedRequester by remember { mutableStateOf<FocusRequester?>(null) }
+    var lastCenterRequester by remember { mutableStateOf<FocusRequester?>(null) }
 
     var isSeekFocused by remember { mutableStateOf(false) }
     var scrubPosMs by remember { mutableLongStateOf(currentPosMs) }
@@ -130,6 +140,18 @@ fun TvPlayerControls(
         if (justCommittedTarget != null) {
             delay(1200)
             justCommittedTarget = null
+        }
+    }
+
+    // Re-show restores the last focused control. The host re-requests Play at
+    // +50ms, so this runs later (+150ms) and the last control wins
+    // deterministically instead of always snapping back to Play.
+    LaunchedEffect(isVisible) {
+        if (isVisible) {
+            delay(150)
+            try {
+                (lastFocusedRequester ?: internalPlayFocusRequester).requestFocus()
+            } catch (_: Exception) {}
         }
     }
 
@@ -231,7 +253,9 @@ fun TvPlayerControls(
                 }
             }
             Row(
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .focusRestorer(),
                 horizontalArrangement = Arrangement.spacedBy(32.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -255,7 +279,20 @@ fun TvPlayerControls(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier
                         .size(56.dp)
-                        .focusProperties { down = seekBarFocusRequester }
+                        .focusRequester(rewindFocusRequester)
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                lastFocusedRequester = rewindFocusRequester
+                                lastCenterRequester = rewindFocusRequester
+                            }
+                        }
+                        .focusProperties {
+                            down = seekBarFocusRequester
+                            // Terminal edges: no left/upper neighbor above the
+                            // transport row in fullscreen — stay, never die.
+                            left = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                        }
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -290,7 +327,16 @@ fun TvPlayerControls(
                     modifier = playButtonModifier
                         .size(72.dp)
                         .focusRequester(internalPlayFocusRequester)
-                        .focusProperties { down = seekBarFocusRequester }
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                lastFocusedRequester = internalPlayFocusRequester
+                                lastCenterRequester = internalPlayFocusRequester
+                            }
+                        }
+                        .focusProperties {
+                            down = seekBarFocusRequester
+                            up = FocusRequester.Cancel
+                        }
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -326,7 +372,18 @@ fun TvPlayerControls(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier
                         .size(56.dp)
-                        .focusProperties { down = seekBarFocusRequester }
+                        .focusRequester(forwardFocusRequester)
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                lastFocusedRequester = forwardFocusRequester
+                                lastCenterRequester = forwardFocusRequester
+                            }
+                        }
+                        .focusProperties {
+                            down = seekBarFocusRequester
+                            right = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                        }
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -347,6 +404,7 @@ fun TvPlayerControls(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 48.dp, vertical = 24.dp)
+                    .focusGroup()
             ) {
                 val targetPos = if (isSeekFocused) scrubPosMs else currentPosMs
                 val progress = if (durationMs > 0) (targetPos.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
@@ -371,6 +429,7 @@ fun TvPlayerControls(
                             if (state.isFocused) {
                                 scrubPosMs = currentPosMs
                                 scrubStreak = 0
+                                lastFocusedRequester = seekBarFocusRequester
                                 onScrubbingChanged?.invoke(true)
                             } else if (wasFocused) {
                                 onScrubbingChanged?.invoke(false)
@@ -378,9 +437,47 @@ fun TvPlayerControls(
                         }
                         .focusable()
                         .onPreviewKeyEvent { event ->
-                            if (durationMs <= 0L) return@onPreviewKeyEvent false
+                            if (durationMs <= 0L) {
+                                // Pre-first-frame: duration unknown — mirror the
+                                // root handler's Long.MAX_VALUE fallback so
+                                // LEFT/RIGHT seek ±10s via the host instead of
+                                // going dead on a focused seekbar.
+                                if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                    return@onPreviewKeyEvent when (event.nativeKeyEvent.keyCode) {
+                                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                            onSeekBackward()
+                                            onUserInteraction?.invoke()
+                                            true
+                                        }
+                                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                            onSeekForward()
+                                            onUserInteraction?.invoke()
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                } else if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP) {
+                                    return@onPreviewKeyEvent when (event.nativeKeyEvent.keyCode) {
+                                        KeyEvent.KEYCODE_DPAD_LEFT,
+                                        KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                                        else -> false
+                                    }
+                                }
+                                return@onPreviewKeyEvent false
+                            }
                             if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                                 when (event.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_UP -> {
+                                        // Round-trip keeps the column: back to
+                                        // the same transport button, not Play.
+                                        val target = lastCenterRequester ?: internalPlayFocusRequester
+                                        try {
+                                            target.requestFocus()
+                                            true
+                                        } catch (_: Exception) {
+                                            false
+                                        }
+                                    }
                                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                                         val step = calculateStep()
                                         scrubPosMs = (scrubPosMs - step).coerceAtLeast(0L)
@@ -415,6 +512,7 @@ fun TvPlayerControls(
                                 }
                             } else if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP) {
                                 when (event.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_UP,
                                     KeyEvent.KEYCODE_DPAD_LEFT,
                                     KeyEvent.KEYCODE_DPAD_RIGHT,
                                     KeyEvent.KEYCODE_DPAD_CENTER,
@@ -579,6 +677,7 @@ fun TvPlayerControls(
 
                     // Quality + Subtitle buttons (focus: seekBar → quality → subtitle)
                     Row(
+                        modifier = Modifier.focusRestorer(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -603,10 +702,14 @@ fun TvPlayerControls(
                             modifier = Modifier
                                 .focusRequester(speedFocusRequester)
                                 .then(speedButtonModifier)
+                                .onFocusChanged {
+                                    if (it.isFocused) lastFocusedRequester = speedFocusRequester
+                                }
                                 .focusProperties {
                                     up = seekBarFocusRequester
                                     left = subtitleFocusRequester
                                     right = qualityFocusRequester
+                                    down = FocusRequester.Cancel
                                 }
                                 // Circular transport row: Speed <-> Quality <->
                                 // Subtitle. Key routing carries the loop even
@@ -675,10 +778,14 @@ fun TvPlayerControls(
                             modifier = Modifier
                                 .focusRequester(qualityFocusRequester)
                                 .then(qualityButtonModifier)
+                                .onFocusChanged {
+                                    if (it.isFocused) lastFocusedRequester = qualityFocusRequester
+                                }
                                 .focusProperties {
                                     up = seekBarFocusRequester
                                     left = speedFocusRequester
                                     right = subtitleFocusRequester
+                                    down = FocusRequester.Cancel
                                 }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -742,10 +849,14 @@ fun TvPlayerControls(
                             modifier = Modifier
                                 .focusRequester(subtitleFocusRequester)
                                 .then(subtitleButtonModifier)
+                                .onFocusChanged {
+                                    if (it.isFocused) lastFocusedRequester = subtitleFocusRequester
+                                }
                                 .focusProperties {
                                     up = seekBarFocusRequester
                                     left = qualityFocusRequester
                                     right = speedFocusRequester
+                                    down = FocusRequester.Cancel
                                 }
                                 .onPreviewKeyEvent { event ->
                                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

@@ -23,8 +23,8 @@ android {
         applicationId = "com.idlix.tv"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.0.7"
+        versionCode = 10
+        versionName = "1.0.8"
         // No backend URL: direct-source via IdlixDomainResolver (https://idlix.net/ → live mirror).
         // SubDL key lives in core:data BuildConfig (local.properties subdlApiKey / SUBDL_API_KEY env).
 

@@ -23,6 +23,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.idlix.tv.R
+import com.idlix.tv.ui.components.railFocusFrame
 import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
@@ -129,7 +130,8 @@ fun UpdateSettingsRow(
                 Spacer(modifier = Modifier.height(8.dp))
                 UpdateButton(
                     label = stringResource(R.string.update_download),
-                    onClick = onDownloadClick
+                    onClick = onDownloadClick,
+                    modifier = checkButtonModifier
                 )
             }
             is UpdateState.Downloading -> {
@@ -163,7 +165,8 @@ fun UpdateSettingsRow(
                 Spacer(modifier = Modifier.height(8.dp))
                 UpdateButton(
                     label = stringResource(R.string.update_install),
-                    onClick = onInstallClick
+                    onClick = onInstallClick,
+                    modifier = checkButtonModifier
                 )
             }
             is UpdateState.Failed -> {
@@ -193,6 +196,13 @@ private fun UpdateButton(
     primary: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    // Focus frame: 4dp headroom covers the 1.05x zoom + 2dp ring so the
+    // entry button never crops at the scroll-viewport edge.
+    Box(
+        Modifier
+            .railFocusFrame()
+            .padding(4.dp)
+    ) {
     Button(
         onClick = onClick,
         modifier = modifier,
@@ -211,6 +221,7 @@ private fun UpdateButton(
         shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
     ) {
         Text(text = label, fontSize = 14.sp)
+    }
     }
 }
 

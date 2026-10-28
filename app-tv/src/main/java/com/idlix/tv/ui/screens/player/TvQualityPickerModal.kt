@@ -3,6 +3,7 @@ package com.idlix.tv.ui.screens.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -47,6 +49,7 @@ import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
+import kotlinx.coroutines.delay
 
 /**
  * Slide-out quality picker. Clones the [TvSubtitlePickerModal] interaction
@@ -73,12 +76,19 @@ fun TvQualityPickerModal(
     if (!isVisible) return
 
     val firstItemFocusRequester = remember { FocusRequester() }
+    // Bottom edge trap (Zoom card is the last focusable; the note below is a
+    // plain Text): DOWN loops to itself so focus never leaks onto the player.
+    val lastItemFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isVisible) {
         if (isVisible) {
-            try {
-                firstItemFocusRequester.requestFocus()
-            } catch (e: Exception) {}
+            repeat(5) {
+                delay(50)
+                try {
+                    firstItemFocusRequester.requestFocus()
+                    return@LaunchedEffect
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -101,6 +111,7 @@ fun TvQualityPickerModal(
                 .background(Color(0xF0181818))
                 .clickable(enabled = false) {}
                 .padding(24.dp)
+                .focusGroup()
         ) {
             // Header
             Row(
@@ -159,11 +170,17 @@ fun TvQualityPickerModal(
                         },
                         isSelected = isSelected,
                         onClick = { onSelectQuality(quality) },
-                        modifier = if (quality == rows.first()) {
-                            Modifier.focusRequester(firstItemFocusRequester)
-                        } else {
-                            Modifier
-                        }
+                        modifier = Modifier
+                            .then(
+                                if (quality == rows.first()) {
+                                    Modifier.focusRequester(firstItemFocusRequester)
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .focusProperties {
+                                if (quality == rows.first()) up = firstItemFocusRequester
+                            }
                     )
                 }
 
@@ -192,6 +209,9 @@ fun TvQualityPickerModal(
                         badge = stringResource(R.string.aspect_badge_zoom),
                         isSelected = isZoom,
                         onClick = { onSelectAspect(true) },
+                        modifier = Modifier
+                            .focusRequester(lastItemFocusRequester)
+                            .focusProperties { down = lastItemFocusRequester }
                     )
                 }
 
@@ -222,7 +242,11 @@ private fun QualityOptionCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp),
+            .height(50.dp)
+            .focusProperties {
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            },
         shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = CardDefaults.colors(
             containerColor = if (isSelected) NetflixRed.copy(alpha = 0.25f) else NetflixDarkCard,

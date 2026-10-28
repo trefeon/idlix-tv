@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -38,10 +39,11 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.idlix.tv.R
+import com.idlix.tv.ui.components.RailColumnTarget
 import com.idlix.tv.ui.components.TvErrorState
 import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.components.TvSwimlaneRow
-import com.idlix.tv.ui.components.TvTopBarHeight
+import com.idlix.tv.ui.components.dpadBackHandler
 import com.idlix.tv.ui.components.topEdgeBarEscape
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
@@ -71,6 +73,69 @@ fun GenreDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val backFocusRequester = remember { FocusRequester() }
+    // Explicit UP chain (STUCK-1, see HomeScreen): one link per rail.
+    // Neighbors resolve via prev/nextRailId so empty rails are skipped.
+    val moviesRailLink = remember { FocusRequester() }
+    val seriesRailLink = remember { FocusRequester() }
+    // Column-preserving UP/DOWN (see columnHopKeys): per-rail column
+    // registries (index -> card requester), filled by the rails themselves.
+    val moviesCards = remember { mutableMapOf<Int, FocusRequester>() }
+    val seriesCards = remember { mutableMapOf<Int, FocusRequester>() }
+    // Dynamic column order: header + non-empty rails only. Empty rails are
+    // skipped entirely (no outer item, no link): neighbors hop directly past
+    // them so UP/DOWN never lands on a detached container (dead).
+    // Rail order MUST mirror the LazyColumn items below.
+    val railOrder = buildList {
+        add("header")
+        if (uiState.movies.isNotEmpty()) add("movies")
+        if (uiState.series.isNotEmpty()) add("series")
+    }
+    fun railIdx(id: String): Int = railOrder.indexOf(id)
+    fun prevRailId(id: String): String? {
+        val i = railOrder.indexOf(id)
+        if (i <= 0) return null
+        return railOrder[i - 1]
+    }
+    fun nextRailId(id: String): String? {
+        val i = railOrder.indexOf(id)
+        if (i == -1) return null
+        return railOrder.getOrNull(i + 1)
+    }
+    fun linkFor(id: String?): FocusRequester? = when (id) {
+        "header" -> backFocusRequester
+        "movies" -> moviesRailLink
+        "series" -> seriesRailLink
+        else -> null
+    }
+    fun cardsFor(id: String?): MutableMap<Int, FocusRequester>? = when (id) {
+        "movies" -> moviesCards
+        "series" -> seriesCards
+        else -> null
+    }
+    fun sizeFor(id: String?): Int = when (id) {
+        "movies" -> uiState.movies.size
+        "series" -> uiState.series.size
+        else -> 0
+    }
+    fun railStateFor(id: String?): LazyListState? = when (id) {
+        "movies" -> railListStates("movies")
+        "series" -> railListStates("series")
+        else -> null
+    }
+    fun columnFor(id: String?): RailColumnTarget? {
+        if (id == null || id == "header") return null
+        val sz = sizeFor(id)
+        if (sz <= 0) return null
+        val idx = railIdx(id)
+        if (idx < 0) return null
+        return RailColumnTarget(
+            railStateFor(id),
+            cardsFor(id),
+            linkFor(id),
+            sz,
+            idx
+        )
+    }
     val navigateToDetail: (String, String, String) -> Unit = { railId, type, slug ->
         onRefocusKeyChange("$railId/$type/$slug")
         onNavigateToDetail(type, slug)
@@ -112,7 +177,7 @@ fun GenreDetailScreen(
 
     // Return from content detail: scroll to the originating rail + card so it
     // recomposes; its match effect then requests focus and clears the key.
-    // Rail order MUST mirror the LazyColumn below (header, movies, series).
+    // Rail order MUST mirror the LazyColumn below (header + non-empty).
     LaunchedEffect(refocusKey, uiState.isLoading) {
         val key = refocusKey ?: return@LaunchedEffect
         if (uiState.isLoading) return@LaunchedEffect
@@ -136,7 +201,11 @@ fun GenreDetailScreen(
             "movies" to uiState.movies,
             "series" to uiState.series
         )
-        val railOrder = listOf("header") + railLists.keys.toList()
+        val railOrder = buildList {
+            add("header")
+            if (uiState.movies.isNotEmpty()) add("movies")
+            if (uiState.series.isNotEmpty()) add("series")
+        }
         val railIndex = railOrder.indexOf(railId)
         val cardIndex = railLists[railId]
             ?.indexOfFirst { it.contentType == type && it.slug == slug } ?: -1
@@ -171,6 +240,7 @@ fun GenreDetailScreen(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
+            .dpadBackHandler(onBack)
     ) {
         if (uiState.isLoading) {
             TvLoadingSpinner(
@@ -189,7 +259,9 @@ fun GenreDetailScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = TvTopBarHeight + 12.dp)
+                // Shell pads the viewport below the bar (see AppNavigation);
+                // this 12dp keeps the settled ring off the clip edge.
+                contentPadding = PaddingValues(top = 12.dp)
             ) {
                 item {
                     Row(
@@ -216,6 +288,7 @@ fun GenreDetailScreen(
                             modifier = Modifier
                                 .focusRequester(backFocusRequester)
                                 .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
+                                .focusProperties { left = FocusRequester.Cancel }
                                 .topEdgeBarEscape(barLinkRequester)
                         ) {
                             Text(text = stringResource(R.string.back), fontSize = 14.sp)
@@ -231,29 +304,56 @@ fun GenreDetailScreen(
                         )
                     }
                 }
-                item {
-                    TvSwimlaneRow(
-                        title = stringResource(R.string.movies),
-                        items = uiState.movies,
-                        onItemClick = { navigateToDetail("movies", it.contentType, it.slug) },
-                        rowId = "movies",
-                        focusKey = refocusKey,
-                        onFocusKeyConsumed = clearFocusKey,
-                        listState = railListStates("movies"),
-                        barEscapeLink = barLinkRequester
-                    )
+                if (uiState.movies.isNotEmpty()) {
+                    item {
+                        TvSwimlaneRow(
+                            title = stringResource(R.string.movies),
+                            items = uiState.movies,
+                            onItemClick = { navigateToDetail("movies", it.contentType, it.slug) },
+                            rowId = "movies",
+                            focusKey = refocusKey,
+                            onFocusKeyConsumed = clearFocusKey,
+                            listState = railListStates("movies"),
+                            // Disposal-proof hop (DISPOSE-1, option b — see
+                            // HomeScreen): dynamic order header + non-empty.
+                            // In-viewport targets use the declarative links;
+                            // off-screen targets scroll-then-focus via
+                            // railHopKeys; same-column via columnHopKeys.
+                            barEscapeLink = barLinkRequester,
+                            upLink = linkFor(prevRailId("movies")),
+                            downLink = linkFor(nextRailId("movies")),
+                            railLink = moviesRailLink,
+                            outerListState = listState,
+                            upRailIndex = prevRailId("movies")?.let { railIdx(it) } ?: -1,
+                            downRailIndex = nextRailId("movies")?.let { railIdx(it) } ?: -1,
+                            upColumn = columnFor(prevRailId("movies")),
+                            downColumn = columnFor(nextRailId("movies")),
+                            columnCards = moviesCards
+                        )
+                    }
                 }
-                item {
-                    TvSwimlaneRow(
-                        title = stringResource(R.string.series),
-                        items = uiState.series,
-                        onItemClick = { navigateToDetail("series", it.contentType, it.slug) },
-                        rowId = "series",
-                        focusKey = refocusKey,
-                        onFocusKeyConsumed = clearFocusKey,
-                        listState = railListStates("series"),
-                        barEscapeLink = barLinkRequester
-                    )
+                if (uiState.series.isNotEmpty()) {
+                    item {
+                        TvSwimlaneRow(
+                            title = stringResource(R.string.series),
+                            items = uiState.series,
+                            onItemClick = { navigateToDetail("series", it.contentType, it.slug) },
+                            rowId = "series",
+                            focusKey = refocusKey,
+                            onFocusKeyConsumed = clearFocusKey,
+                            listState = railListStates("series"),
+                            barEscapeLink = barLinkRequester,
+                            upLink = linkFor(prevRailId("series")),
+                            downLink = linkFor(nextRailId("series")),
+                            railLink = seriesRailLink,
+                            outerListState = listState,
+                            upRailIndex = prevRailId("series")?.let { railIdx(it) } ?: -1,
+                            downRailIndex = nextRailId("series")?.let { railIdx(it) } ?: -1,
+                            upColumn = columnFor(prevRailId("series")),
+                            downColumn = columnFor(nextRailId("series")),
+                            columnCards = seriesCards
+                        )
+                    }
                 }
             }
         }

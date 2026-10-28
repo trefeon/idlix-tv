@@ -12,7 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -26,7 +26,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,10 +41,11 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.idlix.tv.R
+import com.idlix.tv.ui.components.RailColumnTarget
 import com.idlix.tv.ui.components.TvErrorState
 import com.idlix.tv.ui.components.TvLoadingSpinner
 import com.idlix.tv.ui.components.TvSwimlaneRow
-import com.idlix.tv.ui.components.TvTopBarHeight
+import com.idlix.tv.ui.components.dpadBackHandler
 import com.idlix.tv.ui.components.topEdgeBarEscape
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
@@ -79,6 +82,12 @@ fun CollectionDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val backFocusRequester = remember { FocusRequester() }
+    // Explicit UP chain (STUCK-1, see HomeScreen): one link per section rail,
+    // attached to that rail's first card. Map is stable (remembered) so links
+    // survive recomposition; rails are dynamic so we key by railId.
+    val railLinks = remember { mutableMapOf<String, FocusRequester>() }
+    fun railLinkFor(railId: String): FocusRequester =
+        railLinks.getOrPut(railId) { FocusRequester() }
     val navigateToDetail: (String, String, String) -> Unit = { railId, type, slug ->
         onRefocusKeyChange("$railId/$type/$slug")
         onNavigateToDetail(type, slug)
@@ -96,6 +105,52 @@ fun CollectionDetailScreen(
             val railId = section.slug.ifBlank { section.id }
             railId to section.items.map { it.toMovieItem() }
         }
+    }
+    // Focus order skips empty sections entirely (no outer item, no link):
+    // neighbors hop directly past them so UP/DOWN never lands on a detached
+    // container (dead). sectionRails keeps the data; visibleRails drives
+    // display + focus. Rail order MUST mirror the LazyColumn items below
+    // (header, then visible sections).
+    val visibleRails = sectionRails.filter { it.second.isNotEmpty() }
+    // Column-preserving UP/DOWN (see columnHopKeys): per-rail column
+    // registries (index -> card requester), filled by the rails themselves.
+    val sectionCards = remember { mutableMapOf<String, MutableMap<Int, FocusRequester>>() }
+    fun cardsFor(railId: String): MutableMap<Int, FocusRequester> =
+        sectionCards.getOrPut(railId) { mutableMapOf() }
+    val railOrder = listOf("header") + visibleRails.map { it.first }
+    fun railIdx(id: String): Int = railOrder.indexOf(id)
+    fun prevRailId(id: String): String? {
+        val i = railOrder.indexOf(id)
+        if (i <= 0) return null
+        return railOrder[i - 1]
+    }
+    fun nextRailId(id: String): String? {
+        val i = railOrder.indexOf(id)
+        if (i == -1) return null
+        return railOrder.getOrNull(i + 1)
+    }
+    fun linkFor(id: String?): FocusRequester? = when (id) {
+        "header" -> backFocusRequester
+        null -> null
+        else -> railLinkFor(id)
+    }
+    fun sizeFor(id: String?): Int =
+        visibleRails.firstOrNull { it.first == id }?.second?.size ?: 0
+    fun railStateFor(id: String?): LazyListState? =
+        if (id == null || id == "header") null else railListStates(id)
+    fun columnFor(id: String?): RailColumnTarget? {
+        if (id == null || id == "header") return null
+        val sz = sizeFor(id)
+        if (sz <= 0) return null
+        val idx = railIdx(id)
+        if (idx < 0) return null
+        return RailColumnTarget(
+            railStateFor(id),
+            cardsFor(id),
+            linkFor(id),
+            sz,
+            idx
+        )
     }
 
     LaunchedEffect(collectionSlug) {
@@ -126,7 +181,7 @@ fun CollectionDetailScreen(
 
     // Return from content detail: scroll to the originating rail + card so it
     // recomposes; its match effect then requests focus and clears the key.
-    // Rail order MUST mirror the LazyColumn below (header, then sections).
+    // Rail order MUST mirror the LazyColumn below (header, visible sections).
     LaunchedEffect(refocusKey, uiState.isLoading) {
         val key = refocusKey ?: return@LaunchedEffect
         if (uiState.isLoading) return@LaunchedEffect
@@ -146,9 +201,9 @@ fun CollectionDetailScreen(
             return@LaunchedEffect
         }
         val (railId, type, slug) = parts
-        val railOrder = listOf("header") + sectionRails.map { it.first }
+        val railOrder = listOf("header") + visibleRails.map { it.first }
         val railIndex = railOrder.indexOf(railId)
-        val cardIndex = sectionRails.firstOrNull { it.first == railId }
+        val cardIndex = visibleRails.firstOrNull { it.first == railId }
             ?.second?.indexOfFirst { it.contentType == type && it.slug == slug } ?: -1
         if (railIndex == -1 || cardIndex == -1) {
             onRefocusKeyChange(null)
@@ -181,6 +236,7 @@ fun CollectionDetailScreen(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
+            .dpadBackHandler(onBack)
     ) {
         if (uiState.isLoading) {
             TvLoadingSpinner(
@@ -198,8 +254,13 @@ fun CollectionDetailScreen(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = TvTopBarHeight + 12.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusRestorer(),
+                // Shell pads the viewport below the bar (see AppNavigation);
+                // bottom inset leaves the last rail's zoomed ring room to
+                // settle fully inside the viewport.
+                contentPadding = PaddingValues(top = 12.dp, bottom = 32.dp)
             ) {
                 item {
                     Row(
@@ -226,6 +287,7 @@ fun CollectionDetailScreen(
                             modifier = Modifier
                                 .focusRequester(backFocusRequester)
                                 .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
+                                .focusProperties { left = FocusRequester.Cancel }
                                 .topEdgeBarEscape(barLinkRequester)
                         ) {
                             Text(text = stringResource(R.string.back), fontSize = 14.sp)
@@ -241,7 +303,7 @@ fun CollectionDetailScreen(
                         )
                     }
                 }
-                items(sectionRails, key = { it.first.ifBlank { it.second.firstOrNull()?.id ?: "" } }) { (railId, movies) ->
+                itemsIndexed(visibleRails, key = { _, r -> r.first.ifBlank { r.second.firstOrNull()?.id ?: "" } }) { _, (railId, movies) ->
                     TvSwimlaneRow(
                         title = uiState.sections.firstOrNull {
                             it.slug.ifBlank { it.id } == railId
@@ -252,7 +314,22 @@ fun CollectionDetailScreen(
                         focusKey = refocusKey,
                         onFocusKeyConsumed = clearFocusKey,
                         listState = railListStates(railId),
-                        barEscapeLink = barLinkRequester
+                        // Disposal-proof hop (DISPOSE-1, option b — see
+                        // HomeScreen): header is outer item 0, visible
+                        // sections follow in order. In-viewport targets use
+                        // the declarative links; off-screen targets
+                        // scroll-then-focus via railHopKeys; same-column via
+                        // columnHopKeys. Empty sections have no item/link.
+                        barEscapeLink = barLinkRequester,
+                        upLink = linkFor(prevRailId(railId)),
+                        downLink = linkFor(nextRailId(railId)),
+                        railLink = railLinkFor(railId),
+                        outerListState = listState,
+                        upRailIndex = prevRailId(railId)?.let { railIdx(it) } ?: -1,
+                        downRailIndex = nextRailId(railId)?.let { railIdx(it) } ?: -1,
+                        upColumn = columnFor(prevRailId(railId)),
+                        downColumn = columnFor(nextRailId(railId)),
+                        columnCards = cardsFor(railId)
                     )
                 }
             }

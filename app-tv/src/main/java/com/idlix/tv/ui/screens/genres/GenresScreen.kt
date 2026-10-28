@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -28,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,7 +44,6 @@ import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvErrorState
 import com.idlix.tv.ui.components.TvLoadingSpinner
-import com.idlix.tv.ui.components.TvTopBarHeight
 import com.idlix.tv.ui.components.railFocusFrame
 import com.idlix.tv.ui.components.topEdgeBarEscape
 import com.idlix.tv.ui.theme.NetflixBlack
@@ -69,6 +71,14 @@ fun GenresScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val firstTileFocusRequester = remember { FocusRequester() }
+    // Column-aware grid edges (see SearchScreen): Adaptive(180dp) span varies
+    // with panel width. First-col LEFT stays, last-col RIGHT stays, last-row
+    // DOWN stays; first-row UP escapes to the bar, deeper rows use geometry.
+    val screenWd = LocalConfiguration.current.screenWidthDp
+    val genreCols = remember(screenWd) {
+        val gridW = (screenWd - 96 - 24).coerceAtLeast(180)
+        ((gridW + 16) / (180 + 16)).coerceAtLeast(1)
+    }
     val navigateToGenre: (String, String) -> Unit = { slug, name ->
         onRefocusKeyChange(slug)
         onNavigateToGenre(slug, name)
@@ -134,7 +144,7 @@ fun GenresScreen(
             .fillMaxSize()
             .background(NetflixBlack)
             .padding(horizontal = 48.dp, vertical = 20.dp)
-            .padding(top = TvTopBarHeight)
+            .padding(top = 12.dp)
     ) {
         if (uiState.isLoading) {
             TvLoadingSpinner(
@@ -160,13 +170,29 @@ fun GenresScreen(
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(180.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
+                    // Scale-allowance insets: 12dp each side/top covers the
+                    // 1.08x ring overflow so edge tiles settle fully visible.
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = 12.dp,
+                        bottom = 32.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusRestorer()
                 ) {
-                    items(uiState.genres, key = { it.slug.ifBlank { it.id } }) { genre ->
-                        val isFirst = genre == uiState.genres.firstOrNull()
+                    itemsIndexed(uiState.genres, key = { _, g -> g.slug.ifBlank { g.id } }) { index, genre ->
+                        val isFirst = index == 0
+                        val size = uiState.genres.size
+                        val lastRowCount = if (size % genreCols == 0) genreCols else size % genreCols
+                        val lastRowStart = (size - lastRowCount).coerceAtLeast(0)
+                        val isFirstCol = index % genreCols == 0
+                        val isLastCol = index % genreCols == genreCols - 1 || index == size - 1
+                        val isFirstRow = index < genreCols
+                        val isLastRow = index >= lastRowStart
                         val tileFocusRequester = remember { FocusRequester() }
                         if (refocusKey != null && refocusKey == genre.slug) {
                             LaunchedEffect(refocusKey) {
@@ -204,7 +230,25 @@ fun GenresScreen(
                                     .focusRequester(tileFocusRequester)
                                     .then(if (isFirst) Modifier.focusRequester(firstTileFocusRequester) else Modifier)
                                     .then(if (isFirst && entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
-                                    .topEdgeBarEscape(barLinkRequester)
+                                    .topEdgeBarEscape(
+                                        barLinkRequester,
+                                        onEscape = {
+                                            try {
+                                                gridState.scrollToItem(0)
+                                            } catch (_: Exception) {}
+                                        }
+                                    )
+                                    .focusProperties {
+                                        // First-row UP escapes to the bar via the
+                                        // position-gated modifier above; deeper rows
+                                        // use intra-grid geometry. Terminal edges
+                                        // stay so focus never leaps to the gear or
+                                        // drops off-grid.
+                                        if (isFirstRow && barLinkRequester != null) up = barLinkRequester
+                                        if (isFirstCol) left = FocusRequester.Cancel
+                                        if (isLastCol) right = FocusRequester.Cancel
+                                        if (isLastRow) down = FocusRequester.Cancel
+                                    }
                             ) {
                                 Text(
                                     text = genre.name,

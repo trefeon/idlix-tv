@@ -25,11 +25,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -55,6 +57,7 @@ import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
+import com.idlix.tv.ui.screens.devtools.DevToolsCarousel
 import kotlinx.coroutines.delay
 
 // Web-hero scrims: full-bleed art runs top-to-bottom, so both gradients run
@@ -87,22 +90,41 @@ fun TvHeroBillboard(
     onDetailsClick: (MovieItem) -> Unit,
     // Content-to-bar escape for both CTAs (see topEdgeBarEscape): at partial
     // scroll the billboard sits under the transparent bar and plain UP dies.
-    barEscapeLink: FocusRequester? = null
+    barEscapeLink: FocusRequester? = null,
+    // Scroll-to-top hook forwarded to topEdgeBarEscape (see there): the hero
+    // is index 0, so this is a no-op settle. Null = focus-only (default).
+    onBarEscape: (suspend () -> Unit)? = null,
+    // Browsing pause: true while focus sits anywhere in the host screen
+    // (rails included — see the root hasFocus observer in HomeScreen). The
+    // 8s rotation freezes so the backdrop stays stable while browsing; the
+    // Play node stays outside the artwork key() block either way, so focus
+    // is never disposed by a slide change.
+    rotationPaused: Boolean = false
 ) {
     if (movies.isEmpty()) return
 
     // Featured carousel: self-advancing index, 8s per slide. `remember(count)`
     // keeps the position across content refreshes of the same size and resets
     // it only when the slide count itself changes (no yank-to-zero on every
-    // list re-emission).
+    // list re-emission). Paused while a CTA is focused OR while the host
+    // screen reports focus anywhere (browsing the rails) — the backdrop must
+    // not swap under the user mid-browse.
     val count = movies.size
     var index by remember(count) { mutableIntStateOf(0) }
-    LaunchedEffect(count) {
-        if (count <= 1) return@LaunchedEffect
+    var isPlayFocused by remember { mutableStateOf(false) }
+    var isDetailsFocused by remember { mutableStateOf(false) }
+    val isCtaFocused = isPlayFocused || isDetailsFocused
+    LaunchedEffect(count, isCtaFocused, rotationPaused) {
+        if (count <= 1 || isCtaFocused || rotationPaused) return@LaunchedEffect
         while (true) {
             delay(8000L)
             index = (index + 1) % count
         }
+    }
+    // DevTools inspector feed (dev-only): report carousel position/count.
+    // Additive observer — no effect on playback, timing, or layout.
+    LaunchedEffect(index, count) {
+        DevToolsCarousel.report(index, count)
     }
     val movie = movies[index.coerceIn(0, count - 1)]
 
@@ -132,12 +154,13 @@ fun TvHeroBillboard(
     }
     val isSeries = movie.contentType == "tv_series"
 
-    // Cinematic hero: ~82% of the REAL screen height (LazyColumn items see
+    // Cinematic hero: ~68% of the REAL screen height (LazyColumn items see
     // infinite parent height, so BoxWithConstraints clamps to max and crops).
+    // Short enough that the first rail stays fully on screen below the CTAs.
     // Clamped so the CTA block never crops on short viewports (320dp floor)
     // nor stretches into a fullscreen poster on tall panels (560dp ceiling).
     val screenH = LocalConfiguration.current.screenHeightDp.dp
-    val heroHeight = (screenH * 0.82f).coerceIn(320.dp, 560.dp)
+    val heroHeight = (screenH * 0.68f).coerceIn(320.dp, 560.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -315,12 +338,18 @@ fun TvHeroBillboard(
             ) {
                 Button(
                     onClick = { onPlayClick(movie) },
-                    modifier = playButtonModifier.topEdgeBarEscape(barEscapeLink),
+                    modifier = playButtonModifier
+                        .onFocusChanged { isPlayFocused = it.isFocused }
+                        .topEdgeBarEscape(barEscapeLink, onEscape = onBarEscape)
+                        .edgeCancels(left = true),
                     colors = ButtonDefaults.colors(
                         containerColor = NetflixRed,
                         contentColor = NetflixWhite,
-                        focusedContainerColor = NetflixRed,
-                        focusedContentColor = NetflixWhite
+                        // Inverted on focus (mirrors More Info): the white 2dp
+                        // ring alone washes out on bright backdrops, so the
+                        // red→white flip carries the focused signal. B&W only.
+                        focusedContainerColor = NetflixWhite,
+                        focusedContentColor = NetflixBlack
                     ),
                     scale = ButtonDefaults.scale(focusedScale = 1.08f),
                     border = ButtonDefaults.border(
@@ -349,7 +378,10 @@ fun TvHeroBillboard(
 
                 Button(
                     onClick = { onDetailsClick(movie) },
-                    modifier = Modifier.topEdgeBarEscape(barEscapeLink),
+                    modifier = Modifier
+                        .onFocusChanged { isDetailsFocused = it.isFocused }
+                        .topEdgeBarEscape(barEscapeLink, onEscape = onBarEscape)
+                        .edgeCancels(right = true),
                     colors = ButtonDefaults.colors(
                         containerColor = Color(0x66FFFFFF),
                         contentColor = NetflixWhite,

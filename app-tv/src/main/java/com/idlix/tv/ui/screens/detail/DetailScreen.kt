@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -66,6 +67,7 @@ import com.idlix.tv.R
 import com.idlix.data.model.CastMember
 import com.idlix.data.model.EpisodeItem
 import com.idlix.tv.ui.components.TvLoadingSpinner
+import com.idlix.tv.ui.components.dpadBackHandler
 import com.idlix.tv.ui.components.railFocusFrame
 import com.idlix.tv.ui.components.tvDetailHeaderHeight
 import com.idlix.tv.ui.theme.NetflixBlack
@@ -91,6 +93,12 @@ fun DetailScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val playButtonFocusRequester = remember { FocusRequester() }
+    // Explicit vertical chain (absolute control): Play/Trailer DOWN targets
+    // the season row (or episodes when seasons are absent, else stays).
+    // Season/episode LazyRows expose container links so UP/DOWN never relies
+    // on geometry — last-row DOWN stays via Cancel (cast is non-focusable).
+    val seasonRailLink = remember { FocusRequester() }
+    val episodesRailLink = remember { FocusRequester() }
 
     // Latest unfinished history entry for this title (matched by slug, or movie id):
     // drives the Resume label + seeks to the saved position via the player.
@@ -119,6 +127,7 @@ fun DetailScreen(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
+            .dpadBackHandler(onBack)
     ) {
         if (uiState.isLoading) {
             TvLoadingSpinner(
@@ -143,7 +152,9 @@ fun DetailScreen(
             val castList = uiState.movie?.cast ?: uiState.series?.cast ?: emptyList()
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusRestorer()
             ) {
                 // Header & Info: viewport-relative (78% of real screen height,
                 // clamped 300..420) so the Play CTA stays above the fold on the
@@ -413,7 +424,21 @@ fun DetailScreen(
                                         )
                                     ),
                                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
-                                    modifier = Modifier.focusRequester(playButtonFocusRequester)
+                                    modifier = Modifier
+                                        .focusRequester(playButtonFocusRequester)
+                                        .focusProperties {
+                                            // Col-0 LEFT + fullscreen UP stay;
+                                            // DOWN targets seasons (series) or
+                                            // episodes, else stays (movie).
+                                            left = FocusRequester.Cancel
+                                            up = FocusRequester.Cancel
+                                            if (contentType == "tv_series") {
+                                                val hasSeasons = uiState.series?.seasons?.isNotEmpty() == true
+                                                down = if (hasSeasons) seasonRailLink else episodesRailLink
+                                            } else {
+                                                down = FocusRequester.Cancel
+                                            }
+                                        }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
@@ -452,7 +477,19 @@ fun DetailScreen(
                                                 border = BorderStroke(2.dp, NetflixWhite)
                                             )
                                         ),
-                                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
+                                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                                        modifier = Modifier.focusProperties {
+                                            // Terminal RIGHT + fullscreen UP stay;
+                                            // DOWN mirrors Play (seasons/episodes).
+                                            right = FocusRequester.Cancel
+                                            up = FocusRequester.Cancel
+                                            if (contentType == "tv_series") {
+                                                val hasSeasons = uiState.series?.seasons?.isNotEmpty() == true
+                                                down = if (hasSeasons) seasonRailLink else episodesRailLink
+                                            } else {
+                                                down = FocusRequester.Cancel
+                                            }
+                                        }
                                     ) {
                                         Text(
                                             text = stringResource(R.string.trailer),
@@ -481,11 +518,29 @@ fun DetailScreen(
 
                             // Seasons Row
                             LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                // Restorer + scale-allowance insets to match
+                                // the episodes row: edge pills settle with
+                                // their 1.08x ring fully inside the viewport.
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                                modifier = Modifier
+                                    .focusRequester(seasonRailLink)
+                                    .focusRestorer()
                             ) {
-                                items(uiState.series?.seasons ?: emptyList()) { season ->
+                                val seasons = uiState.series?.seasons ?: emptyList()
+                                items(seasons.size) { sIndex ->
+                                    val season = seasons[sIndex]
+                                    val isFirstSeason = sIndex == 0
+                                    val isLastSeason = sIndex == seasons.lastIndex
                                     val isSelected = season.id == uiState.selectedSeason?.id ||
                                             season.seasonNumber == uiState.selectedSeason?.seasonNumber
+                                    // Focus frame: same bring-into-view
+                                    // headroom idiom as the episode cards.
+                                    Box(
+                                        Modifier
+                                            .railFocusFrame()
+                                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                                    ) {
                                     Button(
                                         onClick = { viewModel.selectSeason(slug, season) },
                                         colors = ButtonDefaults.colors(
@@ -500,9 +555,16 @@ fun DetailScreen(
                                                 border = BorderStroke(2.dp, NetflixWhite)
                                             )
                                         ),
-                                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp))
+                                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                                        modifier = Modifier.focusProperties {
+                                            up = playButtonFocusRequester
+                                            down = episodesRailLink
+                                            if (isFirstSeason) left = FocusRequester.Cancel
+                                            if (isLastSeason) right = FocusRequester.Cancel
+                                        }
                                     ) {
                                         Text(text = season.name)
+                                    }
                                     }
                                 }
                             }
@@ -522,9 +584,18 @@ fun DetailScreen(
                             } else {
                                 LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                    modifier = Modifier.focusRestorer()
+                                    // Scale-allowance end insets: the parent
+                                    // column already insets the start, so the
+                                    // last card settles with its ring clear.
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    modifier = Modifier
+                                        .focusRequester(episodesRailLink)
+                                        .focusRestorer()
                                 ) {
-                                    items(uiState.episodes, key = { it.id }) { ep ->
+                                    items(uiState.episodes.size) { epIndex ->
+                                        val ep = uiState.episodes[epIndex]
+                                        val isFirstEp = epIndex == 0
+                                        val isLastEp = epIndex == uiState.episodes.lastIndex
                                         // 12dp focus frame: the row sits 48dp
                                         // from the edge, but an UP-arrival can
                                         // settle the card at the viewport top —
@@ -547,6 +618,15 @@ fun DetailScreen(
                                                         uiState.selectedSeason?.seasonNumber ?: 1,
                                                         ep.episodeNumber
                                                     )
+                                                },
+                                                modifier = Modifier.focusProperties {
+                                                    val hasSeasons = uiState.series?.seasons?.isNotEmpty() == true
+                                                    up = if (hasSeasons) seasonRailLink else playButtonFocusRequester
+                                                    // Cast is non-focusable: last
+                                                    // content row DOWN stays.
+                                                    down = FocusRequester.Cancel
+                                                    if (isFirstEp) left = FocusRequester.Cancel
+                                                    if (isLastEp) right = FocusRequester.Cancel
                                                 }
                                             )
                                         }
@@ -571,6 +651,11 @@ fun DetailScreen(
 
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                // End inset mirrors the 48dp start inset below:
+                                // the column pads only the start, so the last
+                                // avatar needs scroll room to settle clear of
+                                // the viewport edge.
+                                contentPadding = PaddingValues(end = 48.dp),
                                 modifier = Modifier.focusRestorer()
                             ) {
                                 items(castList.take(12), key = { it.id }) { cast ->
@@ -589,14 +674,15 @@ fun DetailScreen(
 @Composable
 fun TvEpisodeCard(
     episode: EpisodeItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     // Black halo outside the white ring so the selection reads on bright
     // stills too (same B&W-only treatment as the rail cards).
     var epFocused by remember { mutableStateOf(false) }
     Card(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .width(220.dp)
             .height(180.dp)
             .onFocusChanged { epFocused = it.isFocused },

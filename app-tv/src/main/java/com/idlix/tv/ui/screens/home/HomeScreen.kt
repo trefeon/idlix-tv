@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,6 +28,7 @@ import com.idlix.data.model.MovieItem
 import com.idlix.data.model.CollectionItem
 import com.idlix.tv.ui.components.TvCollectionsRow
 import com.idlix.tv.ui.components.TvContinueWatchingRow
+import com.idlix.tv.ui.components.RailColumnTarget
 import com.idlix.tv.ui.components.TvErrorState
 import com.idlix.tv.ui.components.TvHeroBillboard
 import com.idlix.tv.ui.components.TvLoadingSpinner
@@ -59,6 +61,58 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val heroFocusRequester = remember { FocusRequester() }
+    // Browsing signal for the hero carousel (see TvHeroBillboard
+    // rotationPaused): true while focus sits anywhere in this screen — hero
+    // CTAs or any rail — so the backdrop never swaps mid-browse. Passive
+    // observer only; attaches no focus target and touches no focus chain.
+    var screenHasFocus by remember { mutableStateOf(false) }
+    // Explicit UP chain (STUCK-1): one link per rail, attached to that rail's
+    // first card (see TvSwimlaneRow.railLink). Each rail's UP targets the
+    // previous rail's link (first rail targets hero). Preview escape wins
+    // while a card sits under the bar; otherwise this deterministic link wins
+    // over plain search, so UP never dies when the row above is disposed.
+    val continueRailLink = remember { FocusRequester() }
+    val trendingRailLink = remember { FocusRequester() }
+    val top10RailLink = remember { FocusRequester() }
+    val seriesRailLink = remember { FocusRequester() }
+    val actionRailLink = remember { FocusRequester() }
+    val collectionsRailLink = remember { FocusRequester() }
+    // Column-preserving UP/DOWN (see columnHopKeys): per-rail column
+    // registries (index -> card requester), filled by the rails themselves.
+    // Plain maps (not state): written during composition, read on key events.
+    val continueCards = remember { mutableMapOf<Int, FocusRequester>() }
+    val trendingCards = remember { mutableMapOf<Int, FocusRequester>() }
+    val top10Cards = remember { mutableMapOf<Int, FocusRequester>() }
+    val seriesCards = remember { mutableMapOf<Int, FocusRequester>() }
+    val actionCards = remember { mutableMapOf<Int, FocusRequester>() }
+    val collectionsCards = remember { mutableMapOf<Int, FocusRequester>() }
+    // Scroll-to-top on genuine content→bar escape (see topEdgeBarEscape):
+    // UP from a top-edge card lands on the tabs, so pull the hero back into
+    // view underneath. Suspend lambda — the modifier launches it async, so
+    // the focus hop never waits on (or loops from) the scroll. Tab
+    // LEFT/RIGHT and entry focus never touch this path (UP key only).
+    val scrollToTop: suspend () -> Unit = {
+        try {
+            listState.scrollToItem(0)
+        } catch (_: Exception) {}
+    }
+    // Disposal-proof hop (DISPOSE-1, option b): keep the LazyColumn (rail
+    // counts vary with payload; Column+verticalScroll would compose every
+    // rail always and lose indexed return-scroll) and pass each rail its
+    // neighbors' column indices plus the outer list state. Cards preview
+    // DPAD UP/DOWN via railHopKeys: in-viewport targets use the declarative
+    // links below; off-screen/disposed targets scroll-then-focus. Rail order
+    // MUST mirror the LazyColumn items (hero, [continue], rails…).
+    val railOrder = buildList {
+        add("hero")
+        if (uiState.continueWatching.isNotEmpty()) add("continue")
+        add("trending")
+        add("top10")
+        add("series")
+        if (uiState.actionMovies.isNotEmpty()) add("action")
+        if (uiState.collections.isNotEmpty()) add("collections")
+    }
+    fun railIdx(id: String): Int = railOrder.indexOf(id)
     // The matching rail card self-requests focus and clears the key via
     // onRefocusKeyChange(null); a stale/gone key falls back to hero Play
     // after a short settle window. Null key = cold launch / tab entry, which
@@ -140,6 +194,7 @@ fun HomeScreen(
         }
         val railIndex = railOrder.indexOf(railId)
         val cardIndex = when (railId) {
+            "continue" -> uiState.continueWatching.indexOfFirst { it.contentType == type && it.contentId == slug }
             "trending" -> uiState.trending.indexOfFirst { it.contentType == type && it.slug == slug }
             "top10" -> uiState.popularMovies.take(10).indexOfFirst { it.contentType == type && it.slug == slug }
             "series" -> uiState.popularSeries.indexOfFirst { it.slug == slug }
@@ -178,6 +233,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
+            .onFocusChanged { screenHasFocus = it.hasFocus }
     ) {
         if (uiState.isLoading) {
             TvLoadingSpinner(
@@ -195,10 +251,9 @@ fun HomeScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                // 12dp top headroom: when the hero is absent (still loading)
-                // the first rail settles at the viewport top — this keeps the
-                // 1.12x focus ring off the clip edge. Invisible under the
-                // full-bleed hero (black on black).
+                // Settle guard (STUCK-1): the shell pads the viewport below
+                // the bar (see AppNavigation); this 12dp keeps the settled
+                // focus ring off the clip edge (total bar+12dp below y≈80).
                 contentPadding = PaddingValues(top = 12.dp)
             ) {
                 // 1. Dynamic Hero Billboard
@@ -213,6 +268,7 @@ fun HomeScreen(
                                 onRefocusKeyChange("hero")
                                 onNavigateToDetail(it.contentType, it.slug)
                             } else {
+                                onRefocusKeyChange("hero")
                                 onNavigateToPlayer(
                                     it.contentType,
                                     it.id,
@@ -229,7 +285,9 @@ fun HomeScreen(
                             onRefocusKeyChange("hero")
                             onNavigateToDetail(it.contentType, it.slug)
                         },
-                        barEscapeLink = barLinkRequester
+                        barEscapeLink = barLinkRequester,
+                        onBarEscape = scrollToTop,
+                        rotationPaused = screenHasFocus
                     )
                 }
 
@@ -240,6 +298,7 @@ fun HomeScreen(
                             title = stringResource(R.string.continue_watching),
                             items = uiState.continueWatching,
                             onItemClick = { item ->
+                                onRefocusKeyChange("continue/${item.contentType}/${item.contentId}")
                                 onNavigateToPlayer(
                                     item.contentType,
                                     item.contentId,
@@ -251,7 +310,29 @@ fun HomeScreen(
                                     item.episodeNumber
                                 )
                             },
-                            barEscapeLink = barLinkRequester
+                            rowId = "continue",
+                            focusKey = refocusKey,
+                            onFocusKeyConsumed = clearFocusKey,
+                            listState = railListStates("continue"),
+                            barEscapeLink = barLinkRequester,
+                            onBarEscape = scrollToTop,
+                            upLink = heroFocusRequester,
+                            downLink = trendingRailLink,
+                            railLink = continueRailLink,
+                            outerListState = listState,
+                            upRailIndex = railIdx("hero"),
+                            downRailIndex = railIdx("trending"),
+                            // UP targets the hero (not a rail): legacy link
+                            // wins. DOWN stays in-column into trending.
+                            upColumn = null,
+                            downColumn = RailColumnTarget(
+                                railListStates("trending"),
+                                trendingCards,
+                                trendingRailLink,
+                                uiState.trending.size,
+                                railIdx("trending")
+                            ),
+                            columnCards = continueCards
                         )
                     }
                 }
@@ -266,7 +347,29 @@ fun HomeScreen(
                         focusKey = refocusKey,
                         onFocusKeyConsumed = clearFocusKey,
                         listState = railListStates("trending"),
-                        barEscapeLink = barLinkRequester
+                        barEscapeLink = barLinkRequester,
+                        onBarEscape = scrollToTop,
+                        upLink = if (uiState.continueWatching.isNotEmpty()) continueRailLink else heroFocusRequester,
+                        downLink = top10RailLink,
+                        railLink = trendingRailLink,
+                        outerListState = listState,
+                        upRailIndex = if (uiState.continueWatching.isNotEmpty()) railIdx("continue") else railIdx("hero"),
+                        downRailIndex = railIdx("top10"),
+                        upColumn = if (uiState.continueWatching.isNotEmpty()) RailColumnTarget(
+                            railListStates("continue"),
+                            continueCards,
+                            continueRailLink,
+                            uiState.continueWatching.size,
+                            railIdx("continue")
+                        ) else null,
+                        downColumn = RailColumnTarget(
+                            railListStates("top10"),
+                            top10Cards,
+                            top10RailLink,
+                            uiState.popularMovies.take(10).size,
+                            railIdx("top10")
+                        ),
+                        columnCards = trendingCards
                     )
                 }
 
@@ -280,7 +383,29 @@ fun HomeScreen(
                         focusKey = refocusKey,
                         onFocusKeyConsumed = clearFocusKey,
                         listState = railListStates("top10"),
-                        barEscapeLink = barLinkRequester
+                        barEscapeLink = barLinkRequester,
+                        onBarEscape = scrollToTop,
+                        upLink = trendingRailLink,
+                        downLink = seriesRailLink,
+                        railLink = top10RailLink,
+                        outerListState = listState,
+                        upRailIndex = railIdx("trending"),
+                        downRailIndex = railIdx("series"),
+                        upColumn = RailColumnTarget(
+                            railListStates("trending"),
+                            trendingCards,
+                            trendingRailLink,
+                            uiState.trending.size,
+                            railIdx("trending")
+                        ),
+                        downColumn = RailColumnTarget(
+                            railListStates("series"),
+                            seriesCards,
+                            seriesRailLink,
+                            uiState.popularSeries.size,
+                            railIdx("series")
+                        ),
+                        columnCards = top10Cards
                     )
                 }
 
@@ -307,7 +432,35 @@ fun HomeScreen(
                         focusKey = refocusKey,
                         onFocusKeyConsumed = clearFocusKey,
                         listState = railListStates("series"),
-                        barEscapeLink = barLinkRequester
+                        barEscapeLink = barLinkRequester,
+                        onBarEscape = scrollToTop,
+                        upLink = top10RailLink,
+                        downLink = if (uiState.actionMovies.isNotEmpty()) actionRailLink else if (uiState.collections.isNotEmpty()) collectionsRailLink else null,
+                        railLink = seriesRailLink,
+                        outerListState = listState,
+                        upRailIndex = railIdx("top10"),
+                        downRailIndex = if (uiState.actionMovies.isNotEmpty()) railIdx("action") else if (uiState.collections.isNotEmpty()) railIdx("collections") else -1,
+                        upColumn = RailColumnTarget(
+                            railListStates("top10"),
+                            top10Cards,
+                            top10RailLink,
+                            uiState.popularMovies.take(10).size,
+                            railIdx("top10")
+                        ),
+                        downColumn = if (uiState.actionMovies.isNotEmpty()) RailColumnTarget(
+                            railListStates("action"),
+                            actionCards,
+                            actionRailLink,
+                            uiState.actionMovies.size,
+                            railIdx("action")
+                        ) else if (uiState.collections.isNotEmpty()) RailColumnTarget(
+                            railListStates("collections"),
+                            collectionsCards,
+                            collectionsRailLink,
+                            uiState.collections.size,
+                            railIdx("collections")
+                        ) else null,
+                        columnCards = seriesCards
                     )
                 }
 
@@ -322,24 +475,72 @@ fun HomeScreen(
                             focusKey = refocusKey,
                             onFocusKeyConsumed = clearFocusKey,
                             listState = railListStates("action"),
-                            barEscapeLink = barLinkRequester
+                            barEscapeLink = barLinkRequester,
+                            onBarEscape = scrollToTop,
+                            upLink = seriesRailLink,
+                            downLink = if (uiState.collections.isNotEmpty()) collectionsRailLink else null,
+                            railLink = actionRailLink,
+                            outerListState = listState,
+                            upRailIndex = railIdx("series"),
+                            downRailIndex = if (uiState.collections.isNotEmpty()) railIdx("collections") else -1,
+                            upColumn = RailColumnTarget(
+                                railListStates("series"),
+                                seriesCards,
+                                seriesRailLink,
+                                uiState.popularSeries.size,
+                                railIdx("series")
+                            ),
+                            downColumn = if (uiState.collections.isNotEmpty()) RailColumnTarget(
+                                railListStates("collections"),
+                                collectionsCards,
+                                collectionsRailLink,
+                                uiState.collections.size,
+                                railIdx("collections")
+                            ) else null,
+                            columnCards = actionCards
                         )
                     }
+                }
 
-                    // 7. Swimlane: Collections (curated universes/franchises → detail phases)
-                    if (uiState.collections.isNotEmpty()) {
-                        item {
-                            TvCollectionsRow(
-                                title = stringResource(R.string.collections),
-                                items = uiState.collections,
-                                onItemClick = { navigateToCollection(it) },
-                                rowId = "collections",
-                                focusKey = refocusKey,
-                                onFocusKeyConsumed = clearFocusKey,
-                                listState = railListStates("collections"),
-                                barEscapeLink = barLinkRequester
-                            )
-                        }
+                // 7. Swimlane: Collections (curated universes/franchises → detail phases).
+                // Sibling of the action rail (NOT nested inside it): when the
+                // action payload is empty the collections rail still composes,
+                // so series DOWN (with its collections fallback above) can
+                // always reach the bottom rail.
+                if (uiState.collections.isNotEmpty()) {
+                    item {
+                        TvCollectionsRow(
+                            title = stringResource(R.string.collections),
+                            items = uiState.collections,
+                            onItemClick = { navigateToCollection(it) },
+                            rowId = "collections",
+                            focusKey = refocusKey,
+                            onFocusKeyConsumed = clearFocusKey,
+                            listState = railListStates("collections"),
+                            barEscapeLink = barLinkRequester,
+                            onBarEscape = scrollToTop,
+                            upLink = if (uiState.actionMovies.isNotEmpty()) actionRailLink else seriesRailLink,
+                            downLink = null,
+                            railLink = collectionsRailLink,
+                            outerListState = listState,
+                            upRailIndex = if (uiState.actionMovies.isNotEmpty()) railIdx("action") else railIdx("series"),
+                            downRailIndex = -1,
+                            upColumn = if (uiState.actionMovies.isNotEmpty()) RailColumnTarget(
+                                railListStates("action"),
+                                actionCards,
+                                actionRailLink,
+                                uiState.actionMovies.size,
+                                railIdx("action")
+                            ) else RailColumnTarget(
+                                railListStates("series"),
+                                seriesCards,
+                                seriesRailLink,
+                                uiState.popularSeries.size,
+                                railIdx("series")
+                            ),
+                            downColumn = null,
+                            columnCards = collectionsCards
+                        )
                     }
                 }
             }

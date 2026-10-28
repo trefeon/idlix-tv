@@ -3,6 +3,7 @@ package com.idlix.tv.ui.screens.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -53,6 +55,7 @@ import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
+import kotlinx.coroutines.delay
 
 /**
  * One audio rendition from the live `Tracks` groups (language + display label).
@@ -84,12 +87,27 @@ fun TvSubtitlePickerModal(
     if (!isVisible) return
 
     val firstItemFocusRequester = remember { FocusRequester() }
+    // Bottom edge trap: DOWN on the true-last focusable loops to itself so
+    // focus never leaks out of the modal onto the player behind the scrim.
+    val lastItemFocusRequester = remember { FocusRequester() }
+
+    // First focusable is the first audio card when live audio tracks exist,
+    // else the "Off" card. Last focusable is the last SubDL card when present,
+    // else the Search button (when shown), else the last track, else "Off".
+    val hasAudio = availableAudioTracks.isNotEmpty()
+    val searchShown = !isSearchingSubdl
+    val lastIsSearch = subdlSubtitles.isEmpty() && searchShown
+    val lastIsOff = subdlSubtitles.isEmpty() && !searchShown && availableSubtitles.isEmpty()
 
     LaunchedEffect(isVisible) {
         if (isVisible) {
-            try {
-                firstItemFocusRequester.requestFocus()
-            } catch (e: Exception) {}
+            repeat(5) {
+                delay(50)
+                try {
+                    firstItemFocusRequester.requestFocus()
+                    return@LaunchedEffect
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -108,6 +126,7 @@ fun TvSubtitlePickerModal(
                 .background(Color(0xF0181818))
                 .clickable(enabled = false) {}
                 .padding(24.dp)
+                .focusGroup()
         ) {
             // Header
             Row(
@@ -170,12 +189,20 @@ fun TvSubtitlePickerModal(
 
                     items(availableAudioTracks, key = { it.language }) { audio ->
                         val isSelected = audio.language == selectedAudioLanguage
+                        val isFirst = audio == availableAudioTracks.firstOrNull()
                         SubtitleOptionCard(
                             title = audio.label.ifBlank { audio.language },
                             subtitle = null,
                             badge = audio.language.uppercase(),
                             isSelected = isSelected,
-                            onClick = { onSelectAudio(audio.language) }
+                            onClick = { onSelectAudio(audio.language) },
+                            modifier = if (isFirst) {
+                                Modifier
+                                    .focusRequester(firstItemFocusRequester)
+                                    .focusProperties { up = firstItemFocusRequester }
+                            } else {
+                                Modifier
+                            }
                         )
                     }
                 }
@@ -183,13 +210,20 @@ fun TvSubtitlePickerModal(
                 // 1. Turn Off Subtitles
                 item {
                     val isOffSelected = !isSubtitleEnabled || selectedSubtitle == null
+                    val offIsFirst = !hasAudio
                     SubtitleOptionCard(
                         title = stringResource(R.string.subtitles_off),
                         subtitle = null,
                         badge = null,
                         isSelected = isOffSelected,
                         onClick = { onSelectTrack(null) },
-                        modifier = Modifier.focusRequester(firstItemFocusRequester)
+                        modifier = Modifier
+                            .then(if (offIsFirst) Modifier.focusRequester(firstItemFocusRequester) else Modifier)
+                            .then(if (lastIsOff) Modifier.focusRequester(lastItemFocusRequester) else Modifier)
+                            .focusProperties {
+                                if (offIsFirst) up = firstItemFocusRequester
+                                if (lastIsOff) down = lastItemFocusRequester
+                            }
                     )
                 }
 
@@ -207,12 +241,21 @@ fun TvSubtitlePickerModal(
 
                     items(availableSubtitles) { track ->
                         val isSelected = isSubtitleEnabled && selectedSubtitle?.path == track.path
+                        val trackIsLast = subdlSubtitles.isEmpty() && !searchShown &&
+                            track == availableSubtitles.lastOrNull()
                         SubtitleOptionCard(
                             title = track.label.ifBlank { track.lang.uppercase() },
                             subtitle = null,
                             badge = track.lang.uppercase(),
                             isSelected = isSelected,
-                            onClick = { onSelectTrack(track) }
+                            onClick = { onSelectTrack(track) },
+                            modifier = if (trackIsLast) {
+                                Modifier
+                                    .focusRequester(lastItemFocusRequester)
+                                    .focusProperties { down = lastItemFocusRequester }
+                            } else {
+                                Modifier
+                            }
                         )
                     }
                 }
@@ -236,6 +279,13 @@ fun TvSubtitlePickerModal(
                         if (!isSearchingSubdl) {
                             Button(
                                 onClick = onSearchSubdlClick,
+                                modifier = if (lastIsSearch) {
+                                    Modifier
+                                        .focusRequester(lastItemFocusRequester)
+                                        .focusProperties { down = lastItemFocusRequester }
+                                } else {
+                                    Modifier
+                                },
                                 colors = ButtonDefaults.colors(
                                     containerColor = Color.Transparent,
                                     contentColor = NetflixRed,
@@ -295,7 +345,14 @@ fun TvSubtitlePickerModal(
                             subtitle = authorText.ifBlank { null },
                             badge = badgeText,
                             isSelected = false,
-                            onClick = { onSelectSubdl(sub) }
+                            onClick = { onSelectSubdl(sub) },
+                            modifier = if (sub == subdlSubtitles.lastOrNull()) {
+                                Modifier
+                                    .focusRequester(lastItemFocusRequester)
+                                    .focusProperties { down = lastItemFocusRequester }
+                            } else {
+                                Modifier
+                            }
                         )
                     }
                 }
@@ -318,7 +375,11 @@ private fun SubtitleOptionCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp),
+            .height(50.dp)
+            .focusProperties {
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            },
         shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = CardDefaults.colors(
             containerColor = if (isSelected) NetflixRed.copy(alpha = 0.25f) else NetflixDarkCard,

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +59,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -75,8 +78,10 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.screens.settings.components.UpdateSettingsRow
+import com.idlix.tv.ui.components.railFocusFrame
+import com.idlix.tv.ui.components.edgeCancels
 import com.idlix.tv.ui.components.tvContentSidePadding
-import com.idlix.tv.ui.components.TvTopBarHeight
+import com.idlix.tv.ui.components.topEdgeBarEscape
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
@@ -91,7 +96,9 @@ import com.idlix.tv.update.UpdateState
  *
  * The user section never renders raw URLs, API keys, timeouts, UA strings or
  * cache sizes. Everything technical lives in the advanced section, which is
- * session-only (relocked on process death by [SettingsViewModel]).
+ * session-only: relocked on process death ([SettingsViewModel] init) and when
+ * leaving this screen (dispose → [SettingsViewModel.relockAdvanced]), so BACK
+ * from DevTools always lands on the locked user section.
  *
  * D-pad order is the visual order: update, subtitles, cache, history, about.
  * The unlock affordance itself is not focusable.
@@ -104,7 +111,13 @@ fun SettingsScreen(
     // Bar DOWN target on the update-check button (see AppNavigation.contentEntryLink).
     entryLinkRequester: FocusRequester? = null,
     // Content-to-bar escape for scrolled rows (see topEdgeBarEscape).
-    barLinkRequester: FocusRequester? = null
+    barLinkRequester: FocusRequester? = null,
+    // Same-card return from DevTools (mirrors GenreDetailScreen): the key is
+    // hoisted to AppNavigation because this screen disposes under DevTools.
+    refocusKey: String? = null,
+    onRefocusKeyChange: (String?) -> Unit = {},
+    // Opens the in-app developer tools (advanced section only).
+    onOpenDevTools: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -120,11 +133,58 @@ fun SettingsScreen(
     // Delayed like the detail screen: an immediate request fires before the
     // window has focus and is silently dropped.
     val checkFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
+    // Same-card return target for BACK from DevTools (see refocusKey).
+    val devToolsFocusRequester = remember { FocusRequester() }
+    // Gated update-row refocus: the old LaunchedEffect(updateState) yanked
+    // focus back to the check button on EVERY terminal state, stealing the
+    // user away from subtitle/cache/history rows. Now only two cases move
+    // focus: screen entry (first run, no pending return key) and completion
+    // of a user-initiated check/download/install (pending flag set by the
+    // click wrappers below — focus is then on the update row or nowhere,
+    // because the Checking/Downloading spinners are not focusable).
+    // Navigating away never trips either gate, so no yank mid-navigation.
+    var firstEntry by remember { mutableStateOf(true) }
+    var updateFocusPending by remember { mutableStateOf(false) }
+    LaunchedEffect(updateState) {
+        when (updateState) {
+            is UpdateState.Idle,
+            is UpdateState.UpToDate,
+            is UpdateState.Available,
+            is UpdateState.Downloaded,
+            is UpdateState.Failed -> {
+                if ((firstEntry && refocusKey == null) || updateFocusPending) {
+                    firstEntry = false
+                    updateFocusPending = false
+                    try {
+                        kotlinx.coroutines.delay(200)
+                        checkFocusRequester.requestFocus()
+                    } catch (_: Exception) {}
+                }
+            }
+            is UpdateState.Checking,
+            is UpdateState.Downloading -> Unit
+        }
+    }
+    // Return from DevTools parks on the DevTools entry card; an unknown key
+    // — or a relocked advanced section hiding that card — parks on entry.
+    // Mirrors the GenreDetailScreen return effect (delay, focus, clear key).
+    LaunchedEffect(refocusKey) {
+        val key = refocusKey ?: return@LaunchedEffect
+        firstEntry = false
+        updateFocusPending = false
         try {
-            kotlinx.coroutines.delay(200)
-            checkFocusRequester.requestFocus()
+            kotlinx.coroutines.delay(120)
+            if (key == "devtools" && advancedUnlocked) {
+                devToolsFocusRequester.requestFocus()
+            } else {
+                checkFocusRequester.requestFocus()
+            }
         } catch (_: Exception) {}
+        onRefocusKeyChange(null)
+    }
+    // Leaving Settings relocks the advanced section (session-only gate).
+    DisposableEffect(Unit) {
+        onDispose { viewModel.relockAdvanced() }
     }
     var showHistoryConfirm by remember { mutableStateOf(false) }
     // Safe option ("No") owns focus while the destructive confirm is visible,
@@ -155,7 +215,7 @@ fun SettingsScreen(
                 }
             }
             .padding(horizontal = tvContentSidePadding(), vertical = 24.dp)
-            .padding(top = TvTopBarHeight),
+            .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         // ---- Header ------------------------------------------------------
@@ -192,16 +252,19 @@ fun SettingsScreen(
         val stateSnapshot = updateState
         UpdateSettingsRow(
             state = stateSnapshot,
-            onCheckClick = viewModel::checkForUpdates,
+            onCheckClick = { updateFocusPending = true; viewModel.checkForUpdates() },
             checkButtonModifier = Modifier
                 .focusRequester(checkFocusRequester)
-                .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier),
+                .then(if (entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
+                .topEdgeBarEscape(barLinkRequester),
             onDownloadClick = {
                 val available = stateSnapshot as? UpdateState.Available ?: return@UpdateSettingsRow
+                updateFocusPending = true
                 viewModel.downloadUpdate(available.assetUrl)
             },
             onInstallClick = {
                 val downloaded = stateSnapshot as? UpdateState.Downloaded ?: return@UpdateSettingsRow
+                updateFocusPending = true
                 viewModel.installUpdate(downloaded.fileUri)
             }
         )
@@ -215,17 +278,22 @@ fun SettingsScreen(
                 SubtitleOption(
                     label = stringResource(R.string.settings_subtitle_indonesian),
                     selected = subtitleLang == SettingsViewModel.LANG_INDONESIAN,
-                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_INDONESIAN) }
+                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_INDONESIAN) },
+                    barEscapeLink = barLinkRequester,
+                    isFirst = true
                 )
                 SubtitleOption(
                     label = stringResource(R.string.settings_subtitle_english),
                     selected = subtitleLang == SettingsViewModel.LANG_ENGLISH,
-                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_ENGLISH) }
+                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_ENGLISH) },
+                    barEscapeLink = barLinkRequester
                 )
                 SubtitleOption(
                     label = stringResource(R.string.settings_subtitle_off),
                     selected = subtitleLang == SettingsViewModel.LANG_OFF,
-                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_OFF) }
+                    onClick = { viewModel.setSubtitleLanguage(SettingsViewModel.LANG_OFF) },
+                    barEscapeLink = barLinkRequester,
+                    isLast = true
                 )
             }
         }
@@ -239,12 +307,16 @@ fun SettingsScreen(
                 SubtitleOption(
                     label = stringResource(R.string.settings_audio_on),
                     selected = stabilizerEnabled,
-                    onClick = { viewModel.setAudioStabilizer(true) }
+                    onClick = { viewModel.setAudioStabilizer(true) },
+                    barEscapeLink = barLinkRequester,
+                    isFirst = true
                 )
                 SubtitleOption(
                     label = stringResource(R.string.settings_audio_off),
                     selected = !stabilizerEnabled,
-                    onClick = { viewModel.setAudioStabilizer(false) }
+                    onClick = { viewModel.setAudioStabilizer(false) },
+                    barEscapeLink = barLinkRequester,
+                    isLast = true
                 )
             }
         }
@@ -257,6 +329,7 @@ fun SettingsScreen(
             SettingsActionButton(
                 label = stringResource(R.string.settings_cache_title),
                 icon = Icons.Default.Refresh,
+                barEscapeLink = barLinkRequester,
                 onClick = { viewModel.clearImageCache() }
             )
             if (cacheMessage != null) {
@@ -280,6 +353,7 @@ fun SettingsScreen(
                 SettingsActionButton(
                     label = stringResource(R.string.settings_history_title),
                     icon = Icons.Default.Delete,
+                    barEscapeLink = barLinkRequester,
                     onClick = { showHistoryConfirm = true }
                 )
             } else {
@@ -298,17 +372,23 @@ fun SettingsScreen(
                     SettingsActionButton(
                         label = stringResource(R.string.settings_history_no),
                         icon = Icons.Default.Refresh,
+                        barEscapeLink = barLinkRequester,
                         onClick = { showHistoryConfirm = false },
-                        modifier = Modifier.focusRequester(historyNoFocusRequester)
+                        modifier = Modifier.focusRequester(historyNoFocusRequester),
+                        isFirst = true,
+                        isLast = false
                     )
                     SettingsActionButton(
                         label = stringResource(R.string.settings_history_yes),
                         icon = Icons.Default.Delete,
+                        barEscapeLink = barLinkRequester,
                         destructive = true,
                         onClick = {
                             showHistoryConfirm = false
                             viewModel.clearWatchHistory()
-                        }
+                        },
+                        isFirst = false,
+                        isLast = true
                     )
                 }
             }
@@ -334,7 +414,11 @@ fun SettingsScreen(
             SettingsActionButton(
                 label = stringResource(R.string.settings_about_title),
                 icon = Icons.Default.Info,
-                onClick = { viewModel.registerVersionClick() }
+                barEscapeLink = barLinkRequester,
+                onClick = { viewModel.registerVersionClick() },
+                // Locked section: About is the last focusable — DOWN stays.
+                // Unlocked: advanced cards below, leave DOWN to geometry.
+                isBottom = !advancedUnlocked
             )
             if (advancedUnlocked) {
                 StatusLine(
@@ -353,9 +437,31 @@ fun SettingsScreen(
                 title = stringResource(R.string.adv_section_title),
                 desc = stringResource(R.string.adv_section_desc)
             )
-            AdvancedSubdlCard(viewModel = viewModel)
-            AdvancedResolverCard(viewModel = viewModel)
-            AdvancedErrorLogCard(viewModel = viewModel)
+            // In-app developer tools: key-event log, state inspector, manual
+            // actions. Entry lives here so the unlock gate guards it. First in
+            // the section on purpose: the SubDL/resolver cards below open with
+            // a BasicTextField whose input session traps D-pad focus, so
+            // anything placed after them is unreachable by remote.
+            SettingsCard(
+                icon = Icons.Default.Build,
+                title = stringResource(R.string.dev_tools_title),
+                desc = stringResource(R.string.dev_tools_desc)
+            ) {
+                SettingsActionButton(
+                    label = stringResource(R.string.dev_tools_open),
+                    icon = Icons.Default.Build,
+                    onClick = {
+                        // Same-card return: BACK from DevTools parks here.
+                        onRefocusKeyChange("devtools")
+                        onOpenDevTools()
+                    },
+                    modifier = Modifier.focusRequester(devToolsFocusRequester),
+                    barEscapeLink = barLinkRequester
+                )
+            }
+            AdvancedSubdlCard(viewModel = viewModel, barEscapeLink = barLinkRequester)
+            AdvancedResolverCard(viewModel = viewModel, barEscapeLink = barLinkRequester)
+            AdvancedErrorLogCard(viewModel = viewModel, barEscapeLink = barLinkRequester)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -458,7 +564,25 @@ private fun SettingsActionButton(
     onClick: () -> Unit,
     destructive: Boolean = false,
     modifier: Modifier = Modifier,
+    // Content-to-bar escape (see topEdgeBarEscape): position-gated, so only a
+    // button scrolled under the transparent bar escapes and in-content UP is
+    // untouched. Every settings row passes the screen link.
+    barEscapeLink: FocusRequester? = null,
+    // Row position: single-column call sites keep both defaults (LEFT/RIGHT
+    // stay); paired Row buttons pass isFirst/isLast so intra-row moves stay
+    // open while the outer edges trap. isBottom hardens DOWN on the true-last
+    // button (geometry no-op there anyway).
+    isFirst: Boolean = true,
+    isLast: Boolean = true,
+    isBottom: Boolean = false,
 ) {
+    // Focus frame: 4dp headroom covers the 1.05x zoom + 2dp ring so a
+    // settings row settling at the scroll-viewport edge never crops.
+    Box(
+        Modifier
+            .railFocusFrame()
+            .padding(4.dp)
+    ) {
     Button(
         onClick = onClick,
         colors = ButtonDefaults.colors(
@@ -478,7 +602,8 @@ private fun SettingsActionButton(
             )
         ),
         shape = ButtonDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
-        modifier = modifier.height(38.dp)
+        modifier = modifier.height(38.dp).topEdgeBarEscape(barEscapeLink)
+            .edgeCancels(left = isFirst, right = isLast, down = isBottom)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -494,6 +619,7 @@ private fun SettingsActionButton(
             )
         }
     }
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -502,7 +628,20 @@ private fun SubtitleOption(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    // Content-to-bar escape (see topEdgeBarEscape): position-gated, same as
+    // the settings action buttons.
+    barEscapeLink: FocusRequester? = null,
+    // 3-across (or 2-across) row position: outer edges trap, intra-row moves
+    // stay open. Call sites pass first/middle/last explicitly.
+    isFirst: Boolean = false,
+    isLast: Boolean = false,
 ) {
+    // Focus frame: same 4dp headroom idiom as the settings action buttons.
+    Box(
+        Modifier
+            .railFocusFrame()
+            .padding(4.dp)
+    ) {
     Button(
         onClick = onClick,
         colors = ButtonDefaults.colors(
@@ -518,13 +657,15 @@ private fun SubtitleOption(
             )
         ),
         shape = ButtonDefaults.shape(shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
-        modifier = Modifier.height(38.dp)
+        modifier = Modifier.height(38.dp).topEdgeBarEscape(barEscapeLink)
+            .edgeCancels(left = isFirst, right = isLast)
     ) {
         Text(
             text = if (selected) "● $label" else label,
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp
         )
+    }
     }
 }
 
@@ -552,8 +693,14 @@ private fun StatusLine(ok: Boolean, text: String) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun AdvancedSubdlCard(viewModel: SettingsViewModel) {
+private fun AdvancedSubdlCard(
+    viewModel: SettingsViewModel,
+    // Content-to-bar escape for the row buttons + force-clear UP target for
+    // the key field (its input session traps D-pad focus; see SearchScreen).
+    barEscapeLink: FocusRequester? = null,
+) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val subdlKey by viewModel.subdlKey.collectAsState()
     val testing by viewModel.subdlTesting.collectAsState()
@@ -606,7 +753,30 @@ private fun AdvancedSubdlCard(viewModel: SettingsViewModel) {
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { focused = it.isFocused },
+                    .onFocusChanged { focused = it.isFocused }
+                    .onPreviewKeyEvent { event ->
+                        // The field holds an input session that vetoes outgoing
+                        // transfers (SearchScreen precedent): release it first,
+                        // then move UP to the bar.
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                            val link = barEscapeLink
+                            if (link != null) {
+                                try {
+                                    focusManager.clearFocus(force = true)
+                                } catch (_: Exception) {}
+                                try {
+                                    link.requestFocus()
+                                    true
+                                } catch (_: Exception) {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    },
                 decorationBox = { inner ->
                     if (subdlKey.isEmpty()) {
                         Text(
@@ -628,6 +798,7 @@ private fun AdvancedSubdlCard(viewModel: SettingsViewModel) {
                     stringResource(R.string.adv_subdl_test)
                 },
                 icon = Icons.Default.Refresh,
+                barEscapeLink = barEscapeLink,
                 onClick = {
                     viewModel.testSubdlKey(
                         testingLabel = context.getString(R.string.subdl_testing),
@@ -637,26 +808,37 @@ private fun AdvancedSubdlCard(viewModel: SettingsViewModel) {
                             context.getString(R.string.subdl_failed_error, detail)
                         }
                     )
-                }
+                },
+                isFirst = true,
+                isLast = false
             )
             SettingsActionButton(
                 label = stringResource(
                     if (visible) R.string.adv_subdl_hide else R.string.adv_subdl_show
                 ),
                 icon = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                onClick = { visible = !visible }
+                barEscapeLink = barEscapeLink,
+                onClick = { visible = !visible },
+                isFirst = false,
+                isLast = true
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsActionButton(
                 label = stringResource(R.string.adv_subdl_save),
                 icon = Icons.Default.Save,
-                onClick = { viewModel.saveSubdlKey() }
+                barEscapeLink = barEscapeLink,
+                onClick = { viewModel.saveSubdlKey() },
+                isFirst = true,
+                isLast = false
             )
             SettingsActionButton(
                 label = stringResource(R.string.adv_subdl_clear),
                 icon = Icons.Default.Delete,
-                onClick = { viewModel.clearSubdlKey() }
+                barEscapeLink = barEscapeLink,
+                onClick = { viewModel.clearSubdlKey() },
+                isFirst = false,
+                isLast = true
             )
         }
 
@@ -670,8 +852,13 @@ private fun AdvancedSubdlCard(viewModel: SettingsViewModel) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun AdvancedResolverCard(viewModel: SettingsViewModel) {
+private fun AdvancedResolverCard(
+    viewModel: SettingsViewModel,
+    // Same bar-escape contract as the SubDL card.
+    barEscapeLink: FocusRequester? = null,
+) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val baseUrl by viewModel.resolverBaseUrl.collectAsState()
     val lastChecked by viewModel.resolverLastChecked.collectAsState()
@@ -702,6 +889,7 @@ private fun AdvancedResolverCard(viewModel: SettingsViewModel) {
         SettingsActionButton(
             label = stringResource(R.string.adv_resolver_refresh),
             icon = Icons.Default.Refresh,
+            barEscapeLink = barEscapeLink,
             onClick = {
                 viewModel.setResolverNotice(null)
                 viewModel.refreshResolverNow()
@@ -747,7 +935,28 @@ private fun AdvancedResolverCard(viewModel: SettingsViewModel) {
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { focused = it.isFocused },
+                    .onFocusChanged { focused = it.isFocused }
+                    .onPreviewKeyEvent { event ->
+                        // Same input-session release as the SubDL field above.
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                            val link = barEscapeLink
+                            if (link != null) {
+                                try {
+                                    focusManager.clearFocus(force = true)
+                                } catch (_: Exception) {}
+                                try {
+                                    link.requestFocus()
+                                    true
+                                } catch (_: Exception) {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    },
                 decorationBox = { inner ->
                     if (override.isEmpty()) {
                         Text(
@@ -763,6 +972,7 @@ private fun AdvancedResolverCard(viewModel: SettingsViewModel) {
         SettingsActionButton(
             label = stringResource(R.string.adv_resolver_apply),
             icon = Icons.Default.Save,
+            barEscapeLink = barEscapeLink,
             onClick = {
                 val ok = viewModel.applyResolverOverride(override)
                 viewModel.setResolverNotice(
@@ -785,7 +995,11 @@ private fun AdvancedResolverCard(viewModel: SettingsViewModel) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun AdvancedErrorLogCard(viewModel: SettingsViewModel) {
+private fun AdvancedErrorLogCard(
+    viewModel: SettingsViewModel,
+    // Content-to-bar escape for the row buttons (see topEdgeBarEscape).
+    barEscapeLink: FocusRequester? = null,
+) {
     val logText by viewModel.errorLogText.collectAsState()
 
     SettingsCard(
@@ -815,12 +1029,20 @@ private fun AdvancedErrorLogCard(viewModel: SettingsViewModel) {
             SettingsActionButton(
                 label = stringResource(R.string.adv_log_refresh),
                 icon = Icons.Default.Refresh,
-                onClick = { viewModel.refreshErrorLog() }
+                barEscapeLink = barEscapeLink,
+                onClick = { viewModel.refreshErrorLog() },
+                isFirst = true,
+                isLast = false
             )
             SettingsActionButton(
                 label = stringResource(R.string.adv_log_clear),
                 icon = Icons.Default.Delete,
-                onClick = { viewModel.clearErrorLog() }
+                barEscapeLink = barEscapeLink,
+                onClick = { viewModel.clearErrorLog() },
+                isFirst = false,
+                isLast = true,
+                // True-last button on screen — DOWN stays.
+                isBottom = true
             )
         }
     }

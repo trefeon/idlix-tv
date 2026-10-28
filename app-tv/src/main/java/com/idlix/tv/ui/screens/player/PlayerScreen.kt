@@ -1,5 +1,7 @@
 package com.idlix.tv.ui.screens.player
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.net.Uri
 import android.view.KeyEvent
@@ -107,6 +109,9 @@ fun PlayerScreen(
     // Loudness normalizer ("Audio stabilizer"): session-bound INSERT effect,
     // toggle-gated. Same package as PlayerQualityPrefs, no import needed.
     val audioStabilizer = remember { AudioStabilizer() }
+    // Stage-1 PCM normalizer (same shared stabilizer toggle; no session).
+    val loudnessNormalizer = remember { LoudnessNormalizeProcessor() }
+    var stabilizerEnabled by remember { mutableStateOf(loadAudioStabilizer(context)) }
     val qualityReturnFocusRequester = remember { FocusRequester() }
     var isQualityPickerVisible by remember { mutableStateOf(false) }
     var selectedQuality by remember { mutableStateOf(loadPlaybackQuality(context)) }
@@ -169,6 +174,27 @@ fun PlayerScreen(
 
     LaunchedEffect(Unit) {
         rootFocusRequester.requestFocus()
+    }
+
+    // Stabilizer toggle applies live to both stages (Settings flip while
+    // playing): stage-1 PCM normalizer + stage-2 session effect, no rebuild.
+    DisposableEffect(context) {
+        val sp = context.applicationContext.getSharedPreferences(
+            "idlix_tv_prefs", Context.MODE_PRIVATE
+        )
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            stabilizerEnabled = loadAudioStabilizer(context)
+        }
+        sp.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { sp.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    LaunchedEffect(stabilizerEnabled) {
+        try {
+            loudnessNormalizer.setEnabled(stabilizerEnabled)
+        } catch (_: Exception) {}
+        try {
+            audioStabilizer.setEnabled(stabilizerEnabled)
+        } catch (_: Exception) {}
     }
 
     // Auto-hide controls after 6 seconds of inactivity, paused during modal, scrubbing, or next episode prompt
@@ -313,15 +339,18 @@ fun PlayerScreen(
                                 viewModel.dismissNextEpisode()
                                 showControls = true
                                 userInteractionCount++
-                                true
-                            } else if (isScrubbing) {
-                                isScrubbing = false
-                                playButtonFocusRequester.requestFocus()
-                                true
-                            } else if (showControls) {
-                                showControls = false
+                                scope.launch {
+                                    delay(200)
+                                    try {
+                                        playButtonFocusRequester.requestFocus()
+                                    } catch (_: Exception) {}
+                                }
                                 true
                             } else {
+                                // Single-press exit: scrub-dirty BACK is consumed
+                                // by the seek bar itself (revert + Play refocus);
+                                // clean focus, visible/hidden OSD, loading and
+                                // error all exit here — no hide-first strand.
                                 onBack()
                                 true
                             }
@@ -339,16 +368,26 @@ fun PlayerScreen(
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                         KeyEvent.KEYCODE_MEDIA_PLAY,
                         KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                            activePlayer?.let { p ->
-                                if (p.isPlaying) p.pause() else p.play()
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else if (keyEvent.nativeKeyEvent.repeatCount > 0) {
+                                true
+                            } else {
+                                activePlayer?.let { p ->
+                                    if (p.isPlaying) p.pause() else p.play()
+                                }
+                                showControls = true
+                                true
                             }
-                            showControls = true
-                            true
                         }
                         KeyEvent.KEYCODE_MEDIA_STOP -> {
-                            activePlayer?.pause()
-                            showControls = true
-                            true
+                            if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
+                                false
+                            } else {
+                                activePlayer?.pause()
+                                showControls = true
+                                true
+                            }
                         }
                         KeyEvent.KEYCODE_MEDIA_REWIND -> {
                             if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
@@ -390,11 +429,24 @@ fun PlayerScreen(
                                 true
                             }
                         }
-                        KeyEvent.KEYCODE_MENU -> {
+                        KeyEvent.KEYCODE_MENU,
+                        KeyEvent.KEYCODE_INFO -> {
                             if (isNextPromptVisible || isQualityPickerVisible || isSpeedPickerVisible || uiState.isSubtitlePickerVisible) {
                                 false
                             } else {
-                                showControls = true
+                                showControls = !showControls
+                                userInteractionCount++
+                                true
+                            }
+                        }
+                        KeyEvent.KEYCODE_CAPTIONS -> {
+                            if (isNextPromptVisible || uiState.isSubtitlePickerVisible || isQualityPickerVisible || isSpeedPickerVisible ||
+                                uiState.resolvedStream == null
+                            ) {
+                                false
+                            } else {
+                                viewModel.openSubtitlePicker()
+                                userInteractionCount++
                                 true
                             }
                         }
@@ -525,7 +577,7 @@ fun PlayerScreen(
             }
 
             val exoPlayer = remember(context, resolved.hlsMasterUrl) {
-                val renderersFactory = MediaSourceHelper.createRenderersFactory(context)
+                val renderersFactory = MediaSourceHelper.createRenderersFactory(context, loudnessNormalizer)
 
                 // P0 streaming backlog: deep max buffers ride out mirror stalls;
                 // lean start threshold for a faster first frame.
@@ -584,6 +636,8 @@ fun PlayerScreen(
                     // Loudness normalizer: registers the session listener now so
                     // the effect binds as soon as the audio session appears.
                     audioStabilizer.attach(this, loadAudioStabilizer(context))
+                    // Stage-1 PCM normalizer takes the same shared toggle.
+                    loudnessNormalizer.setEnabled(loadAudioStabilizer(context))
                     prepare()
                     if (uiState.initialPositionMs > 0) {
                         seekTo(uiState.initialPositionMs)
@@ -752,7 +806,7 @@ fun PlayerScreen(
                     userInteractionCount++
                 },
                 onSeekTo = { targetMs ->
-                    exoPlayer.seekTo(targetMs)
+                    exoPlayer.seekTo(targetMs.coerceIn(0L, exoPlayer.duration.takeIf { it > 0L } ?: Long.MAX_VALUE))
                     showControls = true
                     userInteractionCount++
                 },
@@ -924,6 +978,12 @@ fun PlayerScreen(
                         // Play focused instead of a focus-less frame.
                         showControls = true
                         userInteractionCount++
+                        scope.launch {
+                            delay(200)
+                            try {
+                                playButtonFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
                     },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)

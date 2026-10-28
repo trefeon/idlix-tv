@@ -12,6 +12,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -25,7 +26,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.idlix.tv.ui.components.TopBarTab
 import com.idlix.tv.ui.components.TvTopBar
+import com.idlix.tv.ui.components.TvTopBarHeight
 import com.idlix.tv.ui.screens.detail.DetailScreen
+import com.idlix.tv.ui.screens.devtools.DevToolsScreen
 import com.idlix.tv.ui.screens.collections.CollectionDetailScreen
 import com.idlix.tv.ui.screens.genres.GenreDetailScreen
 import com.idlix.tv.ui.screens.genres.GenresScreen
@@ -63,6 +66,11 @@ fun AppNavigation(
     var genresRefocusKey by remember { mutableStateOf<String?>(null) }
     var genreDetailRefocusKey by remember { mutableStateOf<String?>(null) }
     var collectionDetailRefocusKey by remember { mutableStateOf<String?>(null) }
+    // Same-card return from DevTools: Settings disposes under DevTools, so the
+    // key lives here (mirrors the detail-swap hoisting above).
+    var settingsRefocusKey by remember { mutableStateOf<String?>(null) }
+    var searchRefocusKey by remember { mutableStateOf<String?>(null) }
+    var continueWatchingRefocusKey by remember { mutableStateOf<String?>(null) }
 
     // Scroll states, hoisted for the same reason as the refocus keys: the tab
     // screens dispose on detail, so their lazy scroll would reset to 0 and an
@@ -74,6 +82,8 @@ fun AppNavigation(
     val genresGridState = rememberLazyGridState()
     val genreDetailListState = rememberLazyListState()
     val collectionDetailListState = rememberLazyListState()
+    val searchGridState = rememberLazyGridState()
+    val continueWatchingGridState = rememberLazyGridState()
     // Rail states by "tab:railId", created on demand and stable thereafter.
     val railListStates = remember { mutableMapOf<String, LazyListState>() }
     val homeRailStates = remember { { railId: String -> railListStates.getOrPut("home:$railId") { LazyListState() } } }
@@ -115,45 +125,65 @@ fun AppNavigation(
         ) {
             setupNavRoutes(
                 navController,
+                currentRoute,
                 homeRefocusKey, { homeRefocusKey = it },
                 moviesRefocusKey, { moviesRefocusKey = it },
                 seriesRefocusKey, { seriesRefocusKey = it },
                 genresRefocusKey, { genresRefocusKey = it },
                 genreDetailRefocusKey, { genreDetailRefocusKey = it },
                 collectionDetailRefocusKey, { collectionDetailRefocusKey = it },
+                settingsRefocusKey, { settingsRefocusKey = it },
+                searchRefocusKey, { searchRefocusKey = it },
+                continueWatchingRefocusKey, { continueWatchingRefocusKey = it },
                 homeListState, homeRailStates,
                 moviesListState, moviesRailStates,
                 seriesListState, seriesRailStates,
                 genresGridState,
                 genreDetailListState, genreDetailRailStates,
                 collectionDetailListState, collectionDetailRailStates,
+                searchGridState,
+                continueWatchingGridState,
                 contentEntryLink, barTabLink
             )
         }
     } else {
-        // Non-fullscreen routes: transparent floating bar over full-bleed
-        // content (web-style). Hero screens bleed art under the bar; text
-        // screens carry their own TvTopBarHeight top inset.
+        // Non-fullscreen routes: content viewport starts BELOW the floating
+        // bar (settle guard STUCK-1). The bar still draws as a transparent
+        // overlay (web-style), but the NavHost no longer slides under it, so
+        // a focused card settled at the viewport top rests at window
+        // y≈TvTopBarHeight (below the tab zone y≈11–74) — plain UP search
+        // always has a strictly-above target and never dies from overlap.
+        // Screens keep their own 12dp top headroom for the focus ring, for a
+        // total bar+12dp rest below y≈80. Hero bleed under the bar is gone
+        // (art starts below the chrome) — focus reliability wins.
         Box(modifier = modifier.then(gamepadBackHandler)) {
             NavHost(
                 navController = navController,
                 startDestination = Screen.Home.route,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = TvTopBarHeight)
             ) {
                 setupNavRoutes(
                     navController,
+                    currentRoute,
                     homeRefocusKey, { homeRefocusKey = it },
                     moviesRefocusKey, { moviesRefocusKey = it },
                     seriesRefocusKey, { seriesRefocusKey = it },
                     genresRefocusKey, { genresRefocusKey = it },
                     genreDetailRefocusKey, { genreDetailRefocusKey = it },
                     collectionDetailRefocusKey, { collectionDetailRefocusKey = it },
+                    settingsRefocusKey, { settingsRefocusKey = it },
+                    searchRefocusKey, { searchRefocusKey = it },
+                    continueWatchingRefocusKey, { continueWatchingRefocusKey = it },
                     homeListState, homeRailStates,
                     moviesListState, moviesRailStates,
                     seriesListState, seriesRailStates,
                     genresGridState,
                     genreDetailListState, genreDetailRailStates,
                     collectionDetailListState, collectionDetailRailStates,
+                    searchGridState,
+                    continueWatchingGridState,
                     contentEntryLink, barTabLink
                 )
             }
@@ -184,6 +214,7 @@ fun AppNavigation(
 
 private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
     navController: androidx.navigation.NavHostController,
+    currentRoute: String,
     homeRefocusKey: String?,
     onHomeRefocusKeyChange: (String?) -> Unit,
     moviesRefocusKey: String?,
@@ -196,6 +227,12 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
     onGenreDetailRefocusKeyChange: (String?) -> Unit,
     collectionDetailRefocusKey: String?,
     onCollectionDetailRefocusKeyChange: (String?) -> Unit,
+    settingsRefocusKey: String?,
+    onSettingsRefocusKeyChange: (String?) -> Unit,
+    searchRefocusKey: String?,
+    onSearchRefocusKeyChange: (String?) -> Unit,
+    continueWatchingRefocusKey: String?,
+    onContinueWatchingRefocusKeyChange: (String?) -> Unit,
     homeListState: LazyListState,
     homeRailStates: (String) -> LazyListState,
     moviesListState: LazyListState,
@@ -207,6 +244,8 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
     genreDetailRailStates: (String) -> LazyListState,
     collectionDetailListState: LazyListState,
     collectionDetailRailStates: (String) -> LazyListState,
+    searchGridState: LazyGridState,
+    continueWatchingGridState: LazyGridState,
     contentEntryLink: FocusRequester,
     barTabLink: FocusRequester
 ) {
@@ -240,7 +279,11 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
                     popUpTo(Screen.Home.route) { inclusive = true }
                 }
             },
-            entryLinkRequester = contentEntryLink
+            refocusKey = continueWatchingRefocusKey,
+            onRefocusKeyChange = onContinueWatchingRefocusKeyChange,
+            gridState = continueWatchingGridState,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink
         )
     }
 
@@ -283,6 +326,9 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
             onNavigateToDetail = { type, slug ->
                 navController.navigate(Screen.Detail.createRoute(type, slug))
             },
+            refocusKey = searchRefocusKey,
+            onRefocusKeyChange = onSearchRefocusKeyChange,
+            gridState = searchGridState,
             entryLinkRequester = contentEntryLink,
             barLinkRequester = barTabLink
         )
@@ -370,7 +416,22 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
     }
 
     composable(Screen.Settings.route) {
-        SettingsScreen(entryLinkRequester = contentEntryLink, barLinkRequester = barTabLink)
+        SettingsScreen(
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink,
+            refocusKey = settingsRefocusKey,
+            onRefocusKeyChange = onSettingsRefocusKeyChange,
+            onOpenDevTools = { navController.navigate(Screen.DevTools.route) }
+        )
+    }
+
+    composable(Screen.DevTools.route) {
+        DevToolsScreen(
+            currentRoute = currentRoute,
+            entryLinkRequester = contentEntryLink,
+            barLinkRequester = barTabLink,
+            onBack = { navController.popBackStack() }
+        )
     }
 
     composable(

@@ -90,8 +90,10 @@ private val TabShape = RoundedCornerShape(4.dp)
  * and UP from the first content rail returns to the bar via normal
  * focus order (bar floats above the NavHost in the shell Box).
  */
-/** Shared chrome height: text screens use it as their top inset so content
- *  never slides under the floating bar; hero screens use 0 (art bleeds). */
+/** Shared chrome height (64dp): hero bleeds under floating bar while text
+ *  screens and the AppNavigation shell use [TvTopBarHeight] as their top
+ *  inset (and topEdgeBarEscape threshold) so focused content never traps
+ *  under the bar. */
 val TvTopBarHeight = 64.dp
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -152,13 +154,16 @@ fun TvTopBar(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                for (tab in TopBarTab.values()) {
+                val tabs = TopBarTab.values()
+                for ((index, tab) in tabs.withIndex()) {
                     TopBarTabItem(
                         tab = tab,
                         selected = tab == selectedTab,
                         onClick = { onTabSelected(tab) },
                         downFocusRequester = downFocusRequester,
-                        tabFocusLink = if (tab == selectedTab) tabFocusLink else null
+                        tabFocusLink = if (tab == selectedTab) tabFocusLink else null,
+                        isFirst = index == 0,
+                        isLast = index == tabs.lastIndex
                     )
                 }
             }
@@ -182,7 +187,9 @@ private fun TopBarTabItem(
     selected: Boolean,
     onClick: () -> Unit,
     downFocusRequester: FocusRequester? = null,
-    tabFocusLink: FocusRequester? = null
+    tabFocusLink: FocusRequester? = null,
+    isFirst: Boolean = false,
+    isLast: Boolean = false
 ) {
     val tabInteraction = remember { MutableInteractionSource() }
     val focused by tabInteraction.collectIsFocusedAsState()
@@ -203,6 +210,10 @@ private fun TopBarTabItem(
             .then(if (tabFocusLink != null) Modifier.focusRequester(tabFocusLink) else Modifier)
             .focusProperties {
                 if (downFocusRequester != null) down = downFocusRequester
+                // Col-0 LEFT stays: HOME has no left neighbor in the fixed
+                // strip, so geometry would die. Last tab RIGHT goes to the
+                // gear via geometry (same Row, always composed) — no Cancel.
+                if (isFirst) left = FocusRequester.Cancel
             }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
@@ -265,6 +276,8 @@ private fun SettingsGear(
             .then(if (tabFocusLink != null) Modifier.focusRequester(tabFocusLink) else Modifier)
             .focusProperties {
                 if (downFocusRequester != null) down = downFocusRequester
+                // Terminal RIGHT stays: gear is the last node in the bar.
+                right = FocusRequester.Cancel
             }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {

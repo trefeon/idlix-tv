@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.res.stringResource
@@ -56,7 +57,31 @@ fun TvCollectionsRow(
     onFocusKeyConsumed: () -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
     // Content-to-bar escape for every tile (see topEdgeBarEscape).
-    barEscapeLink: FocusRequester? = null
+    barEscapeLink: FocusRequester? = null,
+    // Scroll-to-top hook forwarded to topEdgeBarEscape (see there).
+    // Null = focus-only (default).
+    onBarEscape: (suspend () -> Unit)? = null,
+    // Explicit UP/DOWN chain (STUCK-1) + rail link (see TvSwimlaneRow).
+    upLink: FocusRequester? = null,
+    downLink: FocusRequester? = null,
+    railLink: FocusRequester? = null,
+    // Disposal-proof hop (DISPOSE-1, see railHopKeys): the owning screen's
+    // outer list state plus this rail's neighbors' column indices. The hop
+    // only fires when the target rail is off-screen/disposed; in-viewport
+    // targets keep the declarative up/down links above untouched.
+    outerListState: LazyListState? = null,
+    upRailIndex: Int = -1,
+    downRailIndex: Int = -1,
+    // Column-preserving UP/DOWN (same-column hop, see columnHopKeys).
+    // The hop sits before railHopKeys in the card chain, consumes UP/DOWN
+    // first, retries scroll-then-focus bounded, and stays on a final miss —
+    // it never touches the container restorer, so col-0 stays col-0.
+    // Null = legacy path untouched.
+    upColumn: RailColumnTarget? = null,
+    downColumn: RailColumnTarget? = null,
+    // This rail's column registry (index -> card requester), hoisted by the
+    // owning screen. Plain map: written during composition, read on key events.
+    columnCards: MutableMap<Int, FocusRequester>? = null
 ) {
     if (items.isEmpty()) return
 
@@ -77,9 +102,9 @@ fun TvCollectionsRow(
         LazyRow(
             state = listState,
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp),
-            modifier = Modifier.focusRestorer()
+            modifier = Modifier.then(if (railLink != null) Modifier.focusRequester(railLink) else Modifier).focusRestorer()
         ) {
-            items(items, key = { it.id.ifBlank { it.slug } }) { collection ->
+            itemsIndexed(items, key = { _, c -> c.id.ifBlank { c.slug } }) { index, collection ->
                 val cardFocusRequester = remember { FocusRequester() }
                 if (focusKey != null && focusKey == "$rowId/collection/${collection.slug}") {
                     LaunchedEffect(focusKey) {
@@ -89,11 +114,15 @@ fun TvCollectionsRow(
                         onFocusKeyConsumed()
                     }
                 }
+                val isLast = index == items.lastIndex
+                columnCards?.put(index, cardFocusRequester)
                 Box(
                     Modifier
                         .railFocusFrame()
-                        .padding(vertical = 12.dp)
-                        .topEdgeBarEscape(barEscapeLink)
+                        .padding(vertical = TvSizing.RailFocusVertical)
+                        .topEdgeBarEscape(barEscapeLink, onEscape = onBarEscape)
+                        .columnHopKeys(outerListState, index, upColumn, downColumn)
+                        .railHopKeys(outerListState, upLink, upRailIndex, downLink, downRailIndex)
                 ) {
                     val subtitle = buildString {
                         if (collection.itemCount > 0) {
@@ -122,8 +151,13 @@ fun TvCollectionsRow(
                         modifier = Modifier
                             .width(240.dp)
                             .height(104.dp)
-                            .padding(end = 12.dp)
                             .focusRequester(cardFocusRequester)
+                            .focusProperties {
+                                if (upLink != null) up = upLink
+                                if (downLink != null) down = downLink else down = FocusRequester.Cancel
+                                if (index == 0) left = FocusRequester.Cancel
+                                if (isLast) right = FocusRequester.Cancel
+                            }
                     ) {
                         Column {
                             Text(

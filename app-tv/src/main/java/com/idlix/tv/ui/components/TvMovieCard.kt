@@ -84,6 +84,14 @@ fun TvMovieCard(
     // selection read. B&W discipline kept (black/white only, no new colors).
     var cardFocused by remember { mutableStateOf(false) }
 
+    // Zero-vote entries ("0.0"/"0") carry no signal — hide the star row
+    // entirely, mirroring TvHeroBillboard's takeIf { it > 0 }. Non-numeric
+    // strings keep legacy behavior (shown) so custom badges never vanish.
+    val showRating = remember(rating) {
+        rating.isNotBlank() && rating != "N/A" &&
+            (rating.toDoubleOrNull()?.let { it > 0 } ?: true)
+    }
+
     Card(
         onClick = onClick,
         modifier = modifier
@@ -160,7 +168,7 @@ fun TvMovieCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (rating.isNotBlank() && rating != "N/A") {
+                if (showRating) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Star,

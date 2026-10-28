@@ -30,15 +30,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.ui.focus.focusProperties
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -47,8 +53,8 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvContinueWatchingCard
-import com.idlix.tv.ui.components.TvTopBarHeight
 import com.idlix.tv.ui.components.railFocusFrame
+import com.idlix.tv.ui.components.topEdgeBarEscape
 import com.idlix.tv.ui.theme.NetflixBlack
 import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
@@ -62,11 +68,29 @@ fun ContinueWatchingScreen(
     onNavigateToHome: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ContinueWatchingViewModel = viewModel(),
+    // Player-return key: contentId of the originating cell. Hoisted in
+    // AppNavigation (same reason as the Genres grid key — the grid disposes
+    // on player push, so an in-screen key would die there). Also carries the
+    // delete-neighbor target so removing a cell never strands focus.
+    refocusKey: String? = null,
+    onRefocusKeyChange: (String?) -> Unit = {},
+    gridState: LazyGridState = rememberLazyGridState(),
     // Bar DOWN target on the first Play button (see AppNavigation.contentEntryLink).
-    entryLinkRequester: FocusRequester? = null
+    entryLinkRequester: FocusRequester? = null,
+    // Content-to-bar escape for first-row cards (see topEdgeBarEscape): the
+    // grid scrolls under the floating bar and plain UP dies there (STUCK-1).
+    barLinkRequester: FocusRequester? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showClearConfirm by remember { mutableStateOf(false) }
+    // Column-aware grid edges (see SearchScreen): Adaptive(230dp) span varies
+    // with panel width. First-col LEFT stays, last-col RIGHT stays, last-row
+    // DOWN stays; intra-grid moves stay on geometry.
+    val screenWd = LocalConfiguration.current.screenWidthDp
+    val cwCols = remember(screenWd) {
+        val gridW = (screenWd - 96 - 24).coerceAtLeast(230)
+        ((gridW + 24) / (230 + 24)).coerceAtLeast(1)
+    }
     // Safe option ("No") owns focus while the destructive confirm is visible,
     // so a stray OK press can never land on "Yes, clear".
     val cancelFocusRequester = remember { FocusRequester() }
@@ -76,18 +100,65 @@ fun ContinueWatchingScreen(
     // First-entry gated so deletes/clears never yank focus back to the top.
     val firstPlayFocusRequester = remember { FocusRequester() }
     val exploreFocusRequester = remember { FocusRequester() }
+    // Screen-local consume flag: the NavHost graph does not rebuild on
+    // same-branch recomposition, so the consume never propagates back to
+    // THIS composition (see MoviesScreen).
+    var refocusConsumed by remember { mutableStateOf(false) }
+    val clearFocusKey: () -> Unit = {
+        refocusConsumed = true
+        onRefocusKeyChange(null)
+    }
     var firstEntry by remember { mutableStateOf(true) }
+    // Empty at any time — fresh, last-delete, or clear-all — parks on
+    // Explore so deletes/clears never strand focus on a disposed node.
     LaunchedEffect(uiState.items, showClearConfirm) {
-        if (showClearConfirm || !firstEntry) return@LaunchedEffect
+        if (showClearConfirm || uiState.items.isNotEmpty()) return@LaunchedEffect
+        onRefocusKeyChange(null)
+        kotlinx.coroutines.delay(120)
+        try {
+            exploreFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+    // First entry with items parks on the first Play. Gated to the first
+    // settled run so player returns and deletes never yank focus to the top.
+    LaunchedEffect(uiState.items) {
+        if (!firstEntry || uiState.items.isEmpty()) return@LaunchedEffect
         firstEntry = false
         kotlinx.coroutines.delay(120)
         try {
-            if (uiState.items.isNotEmpty()) {
-                firstPlayFocusRequester.requestFocus()
-            } else {
-                exploreFocusRequester.requestFocus()
-            }
+            firstPlayFocusRequester.requestFocus()
         } catch (_: Exception) {}
+    }
+    // Player return / delete-neighbor: scroll the target cell back into view;
+    // its Play match effect requests focus and clears the key.
+    LaunchedEffect(refocusKey, uiState.items) {
+        val key = refocusKey ?: return@LaunchedEffect
+        if (uiState.items.isEmpty()) return@LaunchedEffect
+        val index = uiState.items.indexOfFirst { it.contentId == key }
+        if (index == -1) {
+            onRefocusKeyChange(null)
+            try {
+                firstPlayFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+            return@LaunchedEffect
+        }
+        try {
+            gridState.scrollToItem(index)
+        } catch (_: Exception) {
+            onRefocusKeyChange(null)
+            try {
+                firstPlayFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+            return@LaunchedEffect
+        }
+        // Watchdog: if the cell never consumes the key, park on first Play.
+        kotlinx.coroutines.delay(1500)
+        if (!refocusConsumed) {
+            onRefocusKeyChange(null)
+            try {
+                firstPlayFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
     }
     LaunchedEffect(showClearConfirm) {
         if (showClearConfirm) {
@@ -105,7 +176,7 @@ fun ContinueWatchingScreen(
             .fillMaxSize()
             .background(NetflixBlack)
             .padding(horizontal = 48.dp, vertical = 20.dp)
-            .padding(top = TvTopBarHeight)
+            .padding(top = 12.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header
@@ -194,6 +265,10 @@ fun ContinueWatchingScreen(
                             Button(
                                 onClick = {
                                     showClearConfirm = false
+                                    // Null key hands focus to the empty-state
+                                    // effect, which parks on Explore.
+                                    refocusConsumed = false
+                                    onRefocusKeyChange(null)
                                     viewModel.clearAll()
                                 },
                                 colors = ButtonDefaults.colors(
@@ -275,25 +350,58 @@ fun ContinueWatchingScreen(
                 }
             } else {
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Adaptive(230.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
+                    // Scale-allowance insets: 12dp each side/top covers the
+                    // 1.08x ring overflow so edge cells settle fully visible.
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = 12.dp,
+                        bottom = 32.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                     modifier = Modifier
                         .fillMaxSize()
                         .weight(1f)
+                        .focusRestorer()
                 ) {
-                    items(uiState.items, key = { it.contentId }) { item ->
-                        val isFirst = item == uiState.items.firstOrNull()
-                        Column {
+                    itemsIndexed(uiState.items, key = { _, it -> it.contentId }) { index, item ->
+                        val isFirst = index == 0
+                        val size = uiState.items.size
+                        val cols = cwCols
+                        val lastRowCount = if (size % cols == 0) cols else size % cols
+                        val lastRowStart = (size - lastRowCount).coerceAtLeast(0)
+                        val isFirstCol = index % cols == 0
+                        val isLastCol = index % cols == cols - 1 || index == size - 1
+                        val isLastRow = index >= lastRowStart
+                        val playFocusRequester = remember { FocusRequester() }
+                        if (refocusKey != null && refocusKey == item.contentId) {
+                            LaunchedEffect(refocusKey) {
+                                try {
+                                    playFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                                clearFocusKey()
+                            }
+                        }
+                        // Cell-level focus frame: covers the card AND the
+                        // Play/Delete buttons below it, so whichever node owns
+                        // focus settles with ring + zoom fully visible.
+                        Column(
+                            Modifier
+                                .railFocusFrame()
+                                .padding(vertical = 12.dp)
+                        ) {
                             Box(
                                 Modifier
-                                    .railFocusFrame()
-                                    .padding(vertical = 12.dp)
+                                    .topEdgeBarEscape(barLinkRequester)
                             ) {
                                 TvContinueWatchingCard(
                                     item = item,
                                     onClick = {
+                                        refocusConsumed = false
+                                        onRefocusKeyChange(item.contentId)
                                         onNavigateToPlayer(
                                             item.contentType,
                                             item.contentId,
@@ -306,7 +414,12 @@ fun ContinueWatchingScreen(
                                         )
                                     },
                                     width = 230,
-                                    height = 140
+                                    height = 140,
+                                    modifier = Modifier.focusProperties {
+                                        if (isFirstCol) left = FocusRequester.Cancel
+                                        if (isLastCol) right = FocusRequester.Cancel
+                                        if (isLastRow) down = FocusRequester.Cancel
+                                    }
                                 )
                             }
 
@@ -318,6 +431,8 @@ fun ContinueWatchingScreen(
                             ) {
                                 Button(
                                     onClick = {
+                                        refocusConsumed = false
+                                        onRefocusKeyChange(item.contentId)
                                         onNavigateToPlayer(
                                             item.contentType,
                                             item.contentId,
@@ -340,8 +455,14 @@ fun ContinueWatchingScreen(
                                     shape = ButtonDefaults.shape(shape = RoundedCornerShape(4.dp)),
                                     modifier = Modifier
                                         .weight(1f)
+                                        .focusRequester(playFocusRequester)
                                         .then(if (isFirst) Modifier.focusRequester(firstPlayFocusRequester) else Modifier)
                                         .then(if (isFirst && entryLinkRequester != null) Modifier.focusRequester(entryLinkRequester) else Modifier)
+                                        .topEdgeBarEscape(barLinkRequester)
+                                        .focusProperties {
+                                            if (isFirstCol) left = FocusRequester.Cancel
+                                            if (isLastRow) down = FocusRequester.Cancel
+                                        }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
@@ -353,7 +474,21 @@ fun ContinueWatchingScreen(
                                 }
 
                                 Button(
-                                    onClick = { viewModel.removeItem(item.contentId) },
+                                    onClick = {
+                                        // Neighbor takes the key so focus lands
+                                        // on its Play: next cell shifts into
+                                        // this index, else the previous one.
+                                        // Last-cell delete empties to Explore
+                                        // via the empty-state effect (null key).
+                                        val current = uiState.items
+                                        val idx = current.indexOfFirst { it.contentId == item.contentId }
+                                        val neighbor = if (idx != -1) {
+                                            current.getOrNull(idx + 1) ?: current.getOrNull(idx - 1)
+                                        } else null
+                                        refocusConsumed = false
+                                        onRefocusKeyChange(neighbor?.contentId)
+                                        viewModel.removeItem(item.contentId)
+                                    },
                                     colors = ButtonDefaults.colors(
                                         containerColor = NetflixDarkCard,
                                         contentColor = NetflixLightGray,
@@ -364,7 +499,11 @@ fun ContinueWatchingScreen(
                                     border = ButtonDefaults.border(
                                         focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
                                     ),
-                                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(4.dp))
+                                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(4.dp)),
+                                    modifier = Modifier.focusProperties {
+                                        if (isLastCol) right = FocusRequester.Cancel
+                                        if (isLastRow) down = FocusRequester.Cancel
+                                    }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,

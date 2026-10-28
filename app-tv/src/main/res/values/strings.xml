@@ -193,4 +193,28 @@
         <item>Anime</item>
         <item>Romance</item>
     </string-array>
+    <string name="dev_tools_title">Developer tools</string>
+    <string name="dev_tools_desc">On-device diagnostics: key log, state inspector and manual actions.</string>
+    <string name="dev_tools_open">Open developer tools</string>
+    <string name="dev_actions_title">Actions</string>
+    <string name="dev_action_update">Run update check now</string>
+    <string name="dev_action_resolver">Force resolver refresh</string>
+    <string name="dev_action_back">Back to settings</string>
+    <string name="dev_inspector_title">State inspector</string>
+    <string name="dev_row_version">App version</string>
+    <string name="dev_row_screen">Screen</string>
+    <string name="dev_row_resolver">Server address</string>
+    <string name="dev_row_resolver_checked">Last checked</string>
+    <string name="dev_row_update">Update state</string>
+    <string name="dev_row_carousel">Hero carousel</string>
+    <string name="dev_row_route">Current route</string>
+    <string name="dev_row_never">never</string>
+    <string name="dev_row_debug">debug</string>
+    <string name="dev_row_release">release</string>
+    <string name="dev_carousel_format">Slide %1$d of %2$d</string>
+    <string name="dev_screen_format">%1$d × %2$d dp · density %3$s</string>
+    <string name="dev_keylog_title">Key event log</string>
+    <string name="dev_keylog_desc">Newest first. The focus label is captured after each key.</string>
+    <string name="dev_keylog_empty">No keys yet — press D-pad buttons.</string>
+    <string name="dev_keylog_clear">Clear log</string>
 </resources>

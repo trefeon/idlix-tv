@@ -3,6 +3,7 @@ package com.idlix.tv.ui.screens.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -47,6 +49,7 @@ import com.idlix.tv.ui.theme.NetflixDarkCard
 import com.idlix.tv.ui.theme.NetflixLightGray
 import com.idlix.tv.ui.theme.NetflixRed
 import com.idlix.tv.ui.theme.NetflixWhite
+import kotlinx.coroutines.delay
 
 /**
  * Slide-out playback-speed picker. Clones the [TvQualityPickerModal] interaction
@@ -69,12 +72,19 @@ fun TvSpeedPickerModal(
     if (!isVisible) return
 
     val firstItemFocusRequester = remember { FocusRequester() }
+    // Bottom edge trap: DOWN on the last row loops to itself so focus never
+    // leaks out of the modal onto the player behind the scrim.
+    val lastItemFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isVisible) {
         if (isVisible) {
-            try {
-                firstItemFocusRequester.requestFocus()
-            } catch (e: Exception) {}
+            repeat(5) {
+                delay(50)
+                try {
+                    firstItemFocusRequester.requestFocus()
+                    return@LaunchedEffect
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -95,6 +105,7 @@ fun TvSpeedPickerModal(
                 .background(Color(0xF0181818))
                 .clickable(enabled = false) {}
                 .padding(24.dp)
+                .focusGroup()
         ) {
             // Header
             Row(
@@ -145,10 +156,23 @@ fun TvSpeedPickerModal(
                         },
                         isSelected = isSelected,
                         onClick = { onSelectSpeed(speed) },
-                        modifier = if (speed == rows.first()) {
-                            Modifier.focusRequester(firstItemFocusRequester)
-                        } else {
-                            Modifier
+                        modifier = when (speed) {
+                            rows.first() -> if (speed == rows.last()) {
+                                Modifier
+                                    .focusRequester(firstItemFocusRequester)
+                                    .focusProperties {
+                                        up = firstItemFocusRequester
+                                        down = firstItemFocusRequester
+                                    }
+                            } else {
+                                Modifier
+                                    .focusRequester(firstItemFocusRequester)
+                                    .focusProperties { up = firstItemFocusRequester }
+                            }
+                            rows.last() -> Modifier
+                                .focusRequester(lastItemFocusRequester)
+                                .focusProperties { down = lastItemFocusRequester }
+                            else -> Modifier
                         }
                     )
                 }
@@ -179,7 +203,11 @@ private fun SpeedOptionCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp),
+            .height(50.dp)
+            .focusProperties {
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            },
         shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = CardDefaults.colors(
             containerColor = if (isSelected) NetflixRed.copy(alpha = 0.25f) else NetflixDarkCard,
